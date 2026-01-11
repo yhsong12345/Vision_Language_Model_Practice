@@ -1,0 +1,91 @@
+# DeepSpeed ZeRO-3 Configuration for VLA Training
+#
+# ZeRO Stage 3: Full parameter, gradient, and optimizer state partitioning
+# Enables training of very large models across multiple GPUs and nodes
+
+compute_environment: LOCAL_MACHINE
+distributed_type: DEEPSPEED
+deepspeed_config:
+
+  # ZeRO Optimization
+  zero_optimization:
+    stage: 3
+
+    # Overlap communication with computation
+    overlap_comm: true
+
+    # Reduce bucket size (memory vs speed tradeoff)
+    reduce_bucket_size: 5e8
+
+    # Stage 3 specific settings
+    stage3_prefetch_bucket_size: 5e8
+    stage3_param_persistence_threshold: 1e6
+
+    # Gather 16-bit weights for checkpointing
+    stage3_gather_16bit_weights_on_model_save: true
+
+    # Offload settings (enable for very large models or limited GPU memory)
+    offload_optimizer:
+      device: none  # cpu, nvme, or none
+      pin_memory: true
+
+    offload_param:
+      device: none  # cpu, nvme, or none
+      pin_memory: true
+
+  # Mixed Precision
+  bf16:
+    enabled: true
+
+  fp16:
+    enabled: false
+
+  # Gradient settings
+  gradient_accumulation_steps: 4
+  gradient_clipping: 1.0
+
+  # Training batch size
+  train_micro_batch_size_per_gpu: 8
+
+  # Optimizer
+  optimizer:
+    type: AdamW
+    params:
+      lr: 1e-4
+      betas: [0.9, 0.999]
+      eps: 1e-8
+      weight_decay: 0.01
+
+  # Scheduler
+  scheduler:
+    type: WarmupDecayLR
+    params:
+      warmup_min_lr: 0
+      warmup_max_lr: 1e-4
+      warmup_num_steps: 1000
+      total_num_steps: 100000
+
+  # Communication
+  communication_data_type: bf16
+
+  # Activation checkpointing (reduce memory at cost of compute)
+  activation_checkpointing:
+    partition_activations: true
+    cpu_checkpointing: false
+    contiguous_memory_optimization: true
+    number_checkpoints: 4
+    synchronize_checkpoint_boundary: false
+
+  # Wall clock breakdown for profiling
+  wall_clock_breakdown: false
+
+  # Steps per print
+  steps_per_print: 100
+
+# Accelerate settings
+main_training_function: main
+mixed_precision: bf16
+
+# Distributed settings (will be overwritten by SLURM)
+num_machines: 4
+num_processes: 32
