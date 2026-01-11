@@ -8,17 +8,22 @@ Recommended datasets for each training method:
    - Open X-Embodiment: Bridge V2, RT-1 (TensorFlow Datasets)
    - BridgeData V2: Real robot manipulation
 
-2. Reinforcement Learning:
+2. Behavior Cloning:
+   - D4RL Expert: hopper-expert-v2, walker2d-expert-v2 (recommended)
+   - D4RL Medium-Expert: Mixed quality demonstrations
+   - FilteredBCDataset: Automatic top-k% trajectory filtering
+
+3. Reinforcement Learning:
    - D4RL: Offline RL benchmarks (mujoco, antmaze)
    - RoboMimic: Robot manipulation environments
    - MetaWorld: Multi-task robot learning
 
-3. Autonomous Driving:
+4. Autonomous Driving:
    - nuScenes: Multi-modal autonomous driving
    - CARLA: Simulated driving
    - Waymo Open Dataset: Real-world driving
 
-4. Pre-training:
+5. Pre-training:
    - LAION-400M: Large-scale image-text pairs
    - CC3M/CC12M: Conceptual Captions
    - DataComp: Curated web data
@@ -53,6 +58,13 @@ from .rl_dataset import (
     create_rl_dataloader,
 )
 
+from .bc_dataset import (
+    BCDataset,
+    FilteredBCDataset,
+    WeightedBCDataset,
+    create_bc_dataloader,
+)
+
 __all__ = [
     # LeRobot
     "LeRobotDataset",
@@ -75,4 +87,9 @@ __all__ = [
     "D4RLDataset",
     "RoboMimicDataset",
     "create_rl_dataloader",
+    # Behavior Cloning
+    "BCDataset",
+    "FilteredBCDataset",
+    "WeightedBCDataset",
+    "create_bc_dataloader",
 ]

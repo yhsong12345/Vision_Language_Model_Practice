@@ -439,10 +439,76 @@ trainer.train()
 
 ---
 
+## Behavior Cloning with D4RL
+
+The framework includes a dedicated BC dataset based on D4RL for training policies via supervised imitation learning.
+
+### Quick Start: Behavior Cloning
+
+```python
+from train.datasets import BCDataset, create_bc_dataloader
+from train.il import BehavioralCloning
+
+# 1. Load expert demonstrations from D4RL
+dataset = BCDataset(env_name="hopper-expert-v2")
+dataloader = create_bc_dataloader(dataset, batch_size=256)
+
+# 2. Train with behavioral cloning
+trainer = BehavioralCloning(env, policy)
+trainer.train(states=dataset.observations, actions=dataset.actions)
+```
+
+### Filtered BC (for mixed-quality data)
+
+When using datasets with varying demonstration quality, filter to top trajectories:
+
+```python
+from train.datasets import FilteredBCDataset, create_bc_dataloader
+
+# Automatically filters to top 10% trajectories by return
+dataset = FilteredBCDataset(
+    env_name="hopper-medium-v2",
+    filter_top_k=0.1,  # Top 10%
+)
+dataloader = create_bc_dataloader(dataset, batch_size=256)
+```
+
+### Weighted BC
+
+Use all data but prioritize higher-quality demonstrations:
+
+```python
+from train.datasets import WeightedBCDataset, create_bc_dataloader
+
+dataset = WeightedBCDataset(
+    env_name="hopper-medium-v2",
+    temperature=1.0,  # Lower = more weight on high-return trajectories
+)
+
+# Use weighted sampling
+dataloader = create_bc_dataloader(
+    dataset,
+    batch_size=256,
+    use_weighted_sampling=True,
+)
+```
+
+### Recommended D4RL Datasets for BC
+
+| Dataset Type | Examples | Use Case |
+|--------------|----------|----------|
+| **Expert** | `hopper-expert-v2`, `walker2d-expert-v2` | Best quality, use directly |
+| **Medium-Expert** | `hopper-medium-expert-v2` | Good balance, filter recommended |
+| **Kitchen** | `kitchen-complete-v0` | Multi-task manipulation |
+| **Adroit** | `pen-expert-v1`, `door-expert-v1` | Dexterous manipulation |
+
+---
+
 ## Dataset Selection Guide
 
 | Dataset | Best For | Training Method |
 |---------|----------|-----------------|
+| **BCDataset** (D4RL Expert) | Behavior Cloning | BC, Filtered BC |
 | **LeRobot** (PushT, ALOHA) | Quick testing, Imitation Learning | BC, DAgger |
 | **Open X-Embodiment** (Bridge, RT-1) | VLA fine-tuning with language | BC, VLA SFT |
 | **D4RL** (MuJoCo, Antmaze) | Offline RL research | CQL, IQL, DT |
