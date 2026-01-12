@@ -6,28 +6,197 @@ A comprehensive framework for training Vision-Language-Action models for robotic
 
 ```
 Vision_Language_Model_Practice/
-├── model/                    # Model components
-│   ├── vlm/                  # Vision-Language Model (encoders, projectors)
-│   ├── vla/                  # Complete VLA implementations
-│   ├── action_head/          # Action prediction heads (MLP, Gaussian MLP, Diffusion, Transformer)
-│   ├── sensor/               # Sensor encoders (LiDAR, Radar, IMU)
-│   └── fusion/               # Multi-modal sensor fusion (Cross-modal, Hierarchical, Gated)
 ├── config/                   # Configuration classes
+│   ├── model_config.py       # Model architecture configs (VLA, MultiSensor, OpenVLA, SmolVLA)
+│   ├── dataset_config.py     # Dataset configs (LeRobot, OpenX, Driving datasets)
+│   └── training_config.py    # Training configs (Pretrain, Finetune, RL, IL)
+├── model/                    # Model components
+│   ├── vlm/                  # Vision-Language Model
+│   │   ├── vision_encoder.py # Vision encoders (SigLIP, CLIP, DINOv2)
+│   │   └── vision_projector.py # Projectors (MLP, Attention, Perceiver)
+│   ├── action_head/          # Action prediction heads
+│   │   ├── mlp_action_head.py # MLP and Gaussian MLP heads
+│   │   ├── diffusion_action_head.py # DDPM/DDIM diffusion head
+│   │   └── transformer_action_head.py # Autoregressive transformer head
+│   ├── sensor/               # Sensor encoders
+│   │   ├── lidar_encoder.py  # PointNet/PointTransformer for LiDAR
+│   │   ├── radar_encoder.py  # CNN encoder for radar
+│   │   └── imu_encoder.py    # Transformer encoder for IMU
+│   ├── vla/                  # Complete VLA implementations
+│   │   ├── vla_model.py      # Core VLA model
+│   │   ├── multi_sensor_vla.py # Multi-sensor VLA for autonomous driving
+│   │   ├── openvla_wrapper.py # OpenVLA-7B wrapper
+│   │   └── smolvla_wrapper.py # SmolVLA lightweight wrapper
+│   └── fusion/               # Multi-modal sensor fusion
+│       └── sensor_fusion.py  # Self-attention, Cross-modal, Hierarchical, Gated fusion
 ├── train/                    # Training modules
-│   ├── pretrain/             # VLM pretraining (alignment, instruction tuning)
+│   ├── pretrain/             # VLM pretraining
+│   │   ├── vlm_pretrainer.py # Main pretraining orchestrator
+│   │   ├── alignment_trainer.py # Stage 1: Vision-language alignment
+│   │   └── instruction_trainer.py # Stage 2: Visual instruction tuning
 │   ├── finetune/             # Supervised fine-tuning
-│   ├── rl/                   # Reinforcement learning (PPO, SAC, GRPO)
-│   ├── il/                   # Imitation learning (BC, DAgger, GAIL)
+│   │   ├── vla_finetuner.py  # VLA fine-tuning with LoRA support
+│   │   └── dataset.py        # Robot dataset loader
+│   ├── rl/                   # Reinforcement learning
+│   │   ├── base_trainer.py   # Base RL trainer with rollout buffer
+│   │   ├── ppo_trainer.py    # Proximal Policy Optimization
+│   │   ├── sac_trainer.py    # Soft Actor-Critic
+│   │   └── grpo_trainer.py   # Group Relative Policy Optimization
+│   ├── il/                   # Imitation learning
+│   │   ├── base_trainer.py   # Base IL trainer
+│   │   ├── behavioral_cloning.py # Behavioral Cloning (BC)
+│   │   ├── dagger.py         # Dataset Aggregation (DAgger)
+│   │   └── gail.py           # Generative Adversarial Imitation Learning
 │   └── datasets/             # Dataset loaders
+│       ├── lerobot_dataset.py # LeRobot datasets (PushT, ALOHA, xArm)
+│       ├── openx_dataset.py  # Open X-Embodiment datasets
+│       ├── driving_dataset.py # Driving datasets (nuScenes, Waymo, KITTI)
+│       ├── rl_dataset.py     # RL trajectory datasets
+│       └── bc_dataset.py     # D4RL BC datasets with filtering
 ├── eval/                     # Evaluation scripts
-└── scripts/                  # Utility scripts
+│   ├── metrics.py            # Success rate, trajectory, action metrics
+│   ├── evaluator.py          # Main evaluation orchestrator
+│   └── benchmark.py          # Benchmark suites
+├── scripts/                  # Utility scripts
+├── requirements.txt          # Python dependencies
+└── setup.py                  # Package setup
 ```
 
 ---
 
-## VLA Training Procedure
+## Training Methods: Purpose and Benefits
 
-Training a Vision-Language-Action model follows a multi-stage approach. Each stage builds upon the previous one to create a capable robot policy.
+This section explains each training paradigm, when to use it, and what benefits it provides.
+
+### Stage 1: VLM Pretraining
+
+#### 1a. Vision-Language Alignment
+
+| Aspect | Description |
+|--------|-------------|
+| **Purpose** | Train a projector to map visual features into the LLM's embedding space |
+| **What's Trained** | Only the vision projector (MLP or attention-based) |
+| **Dataset** | Image-caption pairs (CC3M, LAION-400M) |
+| **Benefits** | - Enables LLM to "understand" visual inputs<br>- Cheap to train (only small projector)<br>- Can use frozen pretrained vision encoder and LLM |
+| **When to Use** | When building a VLM from scratch; skip if using pretrained VLM (LLaVA, Qwen-VL) |
+
+#### 1b. Visual Instruction Tuning
+
+| Aspect | Description |
+|--------|-------------|
+| **Purpose** | Fine-tune the model to follow visual instructions and answer questions about images |
+| **What's Trained** | Projector + LLM (vision encoder stays frozen) |
+| **Dataset** | Visual instruction data (LLaVA-Instruct-150K, ShareGPT-4V) |
+| **Benefits** | - Enables instruction-following with images<br>- Improves visual reasoning and grounding<br>- Creates general-purpose multimodal assistant |
+| **When to Use** | When you need a conversational VLM before adding action capabilities |
+
+---
+
+### Stage 2: Supervised Fine-tuning (SFT)
+
+| Aspect | Description |
+|--------|-------------|
+| **Purpose** | Add action prediction capability by training an action head on robot demonstrations |
+| **What's Trained** | Action head (+ optionally VLM with LoRA) |
+| **Dataset** | Robot demonstration datasets (Bridge V2, RT-1, ALOHA, PushT) |
+| **Benefits** | - Direct mapping from vision+language to actions<br>- Simple and stable training<br>- Works well with high-quality demonstrations<br>- Fast inference at deployment |
+| **When to Use** | Core stage for any VLA model; always required before RL/IL refinement |
+
+---
+
+### Stage 3: Policy Improvement
+
+#### Reinforcement Learning (RL)
+
+##### PPO (Proximal Policy Optimization)
+
+| Aspect | Description |
+|--------|-------------|
+| **Purpose** | Improve policy through environment interaction with reward signal |
+| **Algorithm Type** | On-policy, actor-critic |
+| **Benefits** | - Stable training with clipped objective<br>- Good sample efficiency for on-policy methods<br>- Works well with discrete and continuous actions<br>- Supports parallel environment rollouts |
+| **When to Use** | When you have a simulator and want stable online RL training |
+| **Limitations** | Requires environment interaction; cannot use offline data efficiently |
+
+##### SAC (Soft Actor-Critic)
+
+| Aspect | Description |
+|--------|-------------|
+| **Purpose** | Learn maximum-entropy policy for robust, exploratory behavior |
+| **Algorithm Type** | Off-policy, actor-critic with entropy regularization |
+| **Benefits** | - Excellent sample efficiency (reuses past experience)<br>- Automatic temperature tuning<br>- Learns diverse, robust policies<br>- Good exploration through entropy maximization |
+| **When to Use** | When sample efficiency is critical; when you want robust policies |
+| **Limitations** | Can be unstable with function approximation; requires replay buffer |
+
+##### GRPO (Group Relative Policy Optimization)
+
+| Aspect | Description |
+|--------|-------------|
+| **Purpose** | Optimize VLA using LLM-style preference learning |
+| **Algorithm Type** | Group-based policy optimization with KL regularization |
+| **Benefits** | - Designed specifically for LLM-based policies<br>- Compares multiple rollouts to determine better actions<br>- Maintains proximity to base policy via KL penalty<br>- Works well with language-conditioned tasks |
+| **When to Use** | For VLA models where you want LLM-style optimization |
+| **Limitations** | Requires multiple rollouts per update; needs clear reward signal |
+
+#### Imitation Learning (IL)
+
+##### BC (Behavioral Cloning)
+
+| Aspect | Description |
+|--------|-------------|
+| **Purpose** | Learn policy by supervised learning on expert demonstrations |
+| **Algorithm Type** | Offline, supervised learning |
+| **Benefits** | - Simplest IL method; just supervised learning<br>- No environment interaction needed<br>- Fast training<br>- Works with any demonstration format |
+| **When to Use** | When you have high-quality demonstrations; as baseline or warm-start |
+| **Limitations** | Distribution shift problem (compounding errors); needs large diverse datasets |
+
+##### DAgger (Dataset Aggregation)
+
+| Aspect | Description |
+|--------|-------------|
+| **Purpose** | Address BC's distribution shift by querying expert during policy rollouts |
+| **Algorithm Type** | Interactive imitation learning |
+| **Benefits** | - Reduces distribution shift problem<br>- Learns to recover from mistakes<br>- Provably converges to expert performance<br>- Progressive reduction of expert involvement |
+| **When to Use** | When you have access to an expert policy and environment simulator |
+| **Limitations** | Requires expert availability; needs environment for rollouts |
+
+##### GAIL (Generative Adversarial Imitation Learning)
+
+| Aspect | Description |
+|--------|-------------|
+| **Purpose** | Learn reward function from demonstrations, then optimize via RL |
+| **Algorithm Type** | Adversarial learning + RL |
+| **Benefits** | - Learns implicit reward from demonstrations<br>- Can generalize beyond demonstrated states<br>- Doesn't require explicit reward engineering<br>- Works with limited demonstrations |
+| **When to Use** | When you lack a reward function but have expert demonstrations |
+| **Limitations** | Training can be unstable; requires careful tuning; needs environment |
+
+---
+
+### Training Method Comparison
+
+| Method | Environment Required | Expert Required | Sample Efficiency | Stability | Best For |
+|--------|---------------------|-----------------|-------------------|-----------|----------|
+| **BC** | No | Yes (data only) | High (offline) | Very High | Quick start, warm-start |
+| **DAgger** | Yes | Yes (online) | Medium | High | Reducing distribution shift |
+| **GAIL** | Yes | Yes (data only) | Low | Medium | No reward function |
+| **PPO** | Yes | No | Medium | High | Stable online RL |
+| **SAC** | Yes | No | High | Medium | Sample-efficient RL |
+| **GRPO** | Yes | No | Medium | High | LLM-based VLA |
+
+---
+
+### Action Head Comparison
+
+| Action Head | Purpose | Benefits | Best For |
+|-------------|---------|----------|----------|
+| **MLP** | Simple deterministic action prediction | Fast, simple, low memory | Single-mode action distributions |
+| **Gaussian MLP** | Stochastic action with uncertainty | Uncertainty estimation, RL-compatible | RL training, uncertainty-aware control |
+| **Diffusion** | Multi-modal action distribution | Handles complex distributions, high quality | Multi-modal actions, precise manipulation |
+| **Transformer** | Autoregressive action sequence | Temporal modeling, action chunking | Long action sequences, ACT-style training |
+
+---
+
+## VLA Training Pipeline
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -518,6 +687,22 @@ dataloader = create_bc_dataloader(
 
 ---
 
+## Supported Datasets
+
+### Robot Manipulation
+- **LeRobot**: PushT, ALOHA (sim), xArm, Unitree G1, UCSD Kitchen
+- **Open X-Embodiment**: Bridge V2, RT-1, DROID
+
+### Autonomous Driving
+- nuScenes, Waymo, KITTI, CARLA
+
+### Offline RL (D4RL)
+- MuJoCo: Hopper, Walker2D, HalfCheetah
+- Adroit: Pen, Door, Hammer
+- Kitchen: Multi-task manipulation
+
+---
+
 ## Hardware Requirements
 
 | Model Size | GPU Memory | Recommended GPU |
@@ -633,12 +818,33 @@ model.save_pretrained("./my_vla_model")
 
 ---
 
+## File Summary
+
+| Directory | Files | Purpose |
+|-----------|-------|---------|
+| `config/` | 3 | Model, dataset, and training configuration dataclasses |
+| `model/vlm/` | 2 | Vision encoders (SigLIP, CLIP, DINOv2) and projectors |
+| `model/action_head/` | 3 | Action prediction heads (MLP, Diffusion, Transformer) |
+| `model/sensor/` | 3 | Sensor encoders for LiDAR, Radar, IMU |
+| `model/vla/` | 4 | Complete VLA model implementations |
+| `model/fusion/` | 1 | Multi-modal sensor fusion strategies |
+| `train/pretrain/` | 3 | VLM pretraining (alignment + instruction tuning) |
+| `train/finetune/` | 2 | Supervised fine-tuning for VLA |
+| `train/rl/` | 4 | Reinforcement learning trainers (PPO, SAC, GRPO) |
+| `train/il/` | 4 | Imitation learning trainers (BC, DAgger, GAIL) |
+| `train/datasets/` | 5 | Dataset loaders for various robot/driving datasets |
+| `eval/` | 3 | Evaluation metrics and benchmark suites |
+| **Total** | **37** | Complete VLA training framework |
+
+---
+
 ## References
 
 - [OpenVLA](https://openvla.github.io/) - Open-source VLA model
 - [RT-2](https://robotics-transformer2.github.io/) - Vision-Language-Action model from Google
 - [LeRobot](https://github.com/huggingface/lerobot) - HuggingFace robot learning library
 - [Open X-Embodiment](https://robotics-transformer-x.github.io/) - Cross-embodiment dataset
+- [D4RL](https://github.com/Farama-Foundation/D4RL) - Offline RL benchmark datasets
 
 ---
 
