@@ -7,6 +7,7 @@ Shared utilities for VLA training:
 - evaluation: Standardized evaluation functions
 - logging: Training metrics and checkpointing
 - device_utils: Device management utilities
+- sim2real: Sim-to-real transfer utilities
 """
 
 from .buffers import (
@@ -31,11 +32,25 @@ from .evaluation import (
 from .logging import (
     TrainingLogger,
     MetricsTracker,
+    ExperimentLogger,
+    ExperimentConfig,
+    BestModelTracker,
+    create_experiment_logger,
 )
 
 from .device_utils import (
     get_device,
     move_to_device,
+)
+
+from .sim2real import (
+    DomainRandomization,
+    DomainRandomizationConfig,
+    SensorNoiseAugmentation,
+    SensorNoiseConfig,
+    ActionSpaceMapper,
+    CameraCalibration,
+    create_sim2real_augmentation,
 )
 
 __all__ = [
@@ -55,7 +70,19 @@ __all__ = [
     # Logging
     "TrainingLogger",
     "MetricsTracker",
+    "ExperimentLogger",
+    "ExperimentConfig",
+    "BestModelTracker",
+    "create_experiment_logger",
     # Device
     "get_device",
     "move_to_device",
+    # Sim2Real
+    "DomainRandomization",
+    "DomainRandomizationConfig",
+    "SensorNoiseAugmentation",
+    "SensorNoiseConfig",
+    "ActionSpaceMapper",
+    "CameraCalibration",
+    "create_sim2real_augmentation",
 ]

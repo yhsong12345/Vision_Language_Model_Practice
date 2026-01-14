@@ -14,6 +14,7 @@ Submodules:
 - datasets: Dataset loaders for various training paradigms
 """
 
+from .base_trainer import BaseTrainer, SupervisedTrainer, RLTrainer
 from .pretrain import VLMPretrainer
 from .finetune import VLAFineTuner
 
@@ -71,6 +72,10 @@ from .datasets import (
 )
 
 __all__ = [
+    # Base Trainers
+    "BaseTrainer",
+    "SupervisedTrainer",
+    "RLTrainer",
     # Pretraining & Fine-tuning
     "VLMPretrainer",
     "VLAFineTuner",

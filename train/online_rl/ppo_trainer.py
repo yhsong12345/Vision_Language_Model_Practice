@@ -6,6 +6,8 @@ Implements PPO algorithm for online robot control:
 - GAE for advantage estimation
 - Multiple epochs per rollout
 - Environment interaction during training
+- W&B integration for monitoring
+- Best model saving
 """
 
 import os
@@ -22,6 +24,7 @@ from .base_trainer import OnlineRLTrainer, RolloutBuffer, ActorCritic
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from config.training_config import RLConfig
+from train.utils.logging import ExperimentLogger, ExperimentConfig
 
 
 class PPOTrainer(OnlineRLTrainer):
@@ -41,6 +44,9 @@ class PPOTrainer(OnlineRLTrainer):
         env,
         policy: Optional[nn.Module] = None,
         config: Optional[RLConfig] = None,
+        use_wandb: bool = False,
+        wandb_project: Optional[str] = None,
+        experiment_name: Optional[str] = None,
         **kwargs,
     ):
         # Default config
@@ -64,6 +70,7 @@ class PPOTrainer(OnlineRLTrainer):
         )
 
         self.config = config
+        self.use_wandb = use_wandb
 
         # PPO specific params
         self.clip_range = config.ppo_clip_range
@@ -90,6 +97,36 @@ class PPOTrainer(OnlineRLTrainer):
             eps=1e-5,
         )
 
+        # Setup experiment logger
+        env_name = env.spec.id if hasattr(env, "spec") and env.spec else "custom_env"
+        exp_config = ExperimentConfig(
+            experiment_name=experiment_name or f"ppo_{env_name}",
+            project_name=wandb_project or "vla-ppo-training",
+            model_name="ActorCritic",
+            model_type="PPO",
+            dataset_name=env_name,
+            learning_rate=config.learning_rate,
+            batch_size=config.batch_size,
+            num_epochs=config.total_timesteps // config.rollout_steps,
+            optimizer="Adam",
+            action_dim=action_dim,
+            device=str(self.device),
+            notes=f"PPO training on {env_name}",
+            tags=["ppo", "online_rl", env_name],
+        )
+
+        self.logger = ExperimentLogger(
+            output_dir=config.output_dir,
+            config=exp_config,
+            monitor_metric="mean_reward",
+            monitor_mode="max",  # maximize reward
+            use_wandb=use_wandb,
+            wandb_project=wandb_project,
+        )
+
+        # Log model info
+        self.logger.log_model_info(self.policy)
+
     def train(self):
         """Run online PPO training with environment interaction."""
         print("=" * 60)
@@ -98,13 +135,16 @@ class PPOTrainer(OnlineRLTrainer):
 
         obs, _ = self.env.reset()
         timestep = 0
-        best_reward = float("-inf")
+        rollout_num = 0
+        episode_reward = 0
+        episode_length = 0
 
         progress_bar = tqdm(total=self.total_timesteps, desc="Training")
 
         while timestep < self.total_timesteps:
             # Collect rollout from environment
             self.buffer.clear()
+            rollout_rewards = []
 
             for _ in range(self.rollout_steps):
                 obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)
@@ -125,9 +165,16 @@ class PPOTrainer(OnlineRLTrainer):
                     log_prob=log_prob.cpu().item(),
                 )
 
+                episode_reward += reward
+                episode_length += 1
+                rollout_rewards.append(reward)
+
                 if done:
+                    self.episode_rewards.append(episode_reward)
+                    self.episode_lengths.append(episode_length)
                     obs, _ = self.env.reset()
-                    self.episode_rewards.append(reward)
+                    episode_reward = 0
+                    episode_length = 0
                 else:
                     obs = next_obs
 
@@ -148,30 +195,69 @@ class PPOTrainer(OnlineRLTrainer):
             # PPO update
             metrics = self.learn_step()
 
-            # Logging
+            # Log step metrics
+            self.logger.log_step(
+                step=timestep,
+                metrics={
+                    "loss": metrics["loss"],
+                    "policy_loss": metrics["policy_loss"],
+                    "value_loss": metrics["value_loss"],
+                    "entropy": metrics["entropy"],
+                    "lr": self.optimizer.param_groups[0]["lr"],
+                    "rollout_reward_mean": np.mean(rollout_rewards),
+                },
+                prefix="train",
+            )
+
+            # Progress bar logging
             if timestep % self.log_freq == 0:
+                mean_ep_reward = np.mean(list(self.episode_rewards)) if self.episode_rewards else 0
                 progress_bar.set_postfix({
-                    "reward": f"{np.mean(list(self.episode_rewards)):.1f}" if self.episode_rewards else "N/A",
+                    "reward": f"{mean_ep_reward:.1f}",
                     "loss": f"{metrics['loss']:.3f}",
                 })
 
             # Evaluation
             if timestep % self.eval_freq == 0:
                 eval_results = self.evaluate()
-                print(f"\nStep {timestep}: Mean Reward = {eval_results['mean_reward']:.2f}")
+                mean_reward = eval_results["mean_reward"]
 
-                if eval_results["mean_reward"] > best_reward:
-                    best_reward = eval_results["mean_reward"]
-                    self.save(os.path.join(self.output_dir, "best_policy.pt"))
+                # Log epoch-level metrics
+                rollout_num += 1
+                self.logger.log_epoch(
+                    epoch=rollout_num,
+                    train_metrics={
+                        "loss": metrics["loss"],
+                        "policy_loss": metrics["policy_loss"],
+                        "value_loss": metrics["value_loss"],
+                        "entropy": metrics["entropy"],
+                    },
+                    val_metrics={
+                        "mean_reward": mean_reward,
+                        "std_reward": eval_results["std_reward"],
+                        "mean_length": eval_results["mean_length"],
+                    },
+                    extra_metrics={
+                        "timesteps": timestep,
+                        "episodes": len(self.episode_rewards),
+                    },
+                )
 
-            # Save checkpoint
-            if timestep % self.save_freq == 0:
-                self.save(os.path.join(self.output_dir, f"policy_{timestep}.pt"))
+                # Update best model (saves automatically if better)
+                self.logger.update_best_model(
+                    model=self.policy,
+                    metric_value=mean_reward,
+                    epoch=rollout_num,
+                    step=timestep,
+                    optimizer=self.optimizer,
+                )
 
             progress_bar.update(self.rollout_steps)
 
         progress_bar.close()
-        self.save()
+
+        # Finalize logging
+        self.logger.finish()
 
     def learn_step(self) -> Dict[str, float]:
         """Perform PPO update using collected rollout data."""
