@@ -5,10 +5,11 @@ Task-specific training configurations and best practices.
 ## Table of Contents
 
 1. [Robot Manipulation](#robot-manipulation)
-2. [Autonomous Driving](#autonomous-driving)
-3. [Humanoid Control](#humanoid-control)
-4. [Simulation Benchmarks](#simulation-benchmarks)
-5. [Real Robot Deployment](#real-robot-deployment)
+2. [RGB-D Manipulation](#rgb-d-manipulation)
+3. [Autonomous Driving](#autonomous-driving)
+4. [Humanoid Control](#humanoid-control)
+5. [Simulation Benchmarks](#simulation-benchmarks)
+6. [Real Robot Deployment](#real-robot-deployment)
 
 ---
 
@@ -153,6 +154,94 @@ trainer = DAgger(
 for iteration in range(10):
     print(f"DAgger iteration {iteration + 1}")
     trainer.collect_and_train(num_episodes=50)
+```
+
+---
+
+## RGB-D Manipulation
+
+### Recipe 3.5: RGB-D Grasping (GraspNet)
+
+**Task**: 6-DoF grasp pose prediction with depth camera
+
+```python
+from model.vla import MultiSensorVLA
+from model.sensor import DepthEncoder
+from train.il import BehavioralCloning
+from train.finetune.dataset import RobotDataset
+from config import MultiSensorVLAConfig, DatasetConfig
+
+# Dataset with depth
+dataset_config = DatasetConfig.rgbd_manipulation()
+dataset = RobotDataset(
+    dataset_name="graspnet",
+    image_processor=image_processor,
+    tokenizer=tokenizer,
+    use_depth=True,
+    depth_size=224,
+)
+
+# Model configuration
+model_config = MultiSensorVLAConfig.rgbd_manipulation()
+
+# Model with depth encoder
+model = MultiSensorVLA(
+    vision_model_name="google/siglip-base-patch16-224",
+    llm_model_name="Qwen/Qwen2-1.5B-Instruct",
+    action_dim=7,  # 6 DoF + gripper
+    use_depth=True,
+    use_lidar=False,
+    use_radar=False,
+    use_imu=False,
+    freeze_vision=True,
+    freeze_llm=True,
+)
+
+# Training config
+config = ILConfig(
+    learning_rate=1e-4,
+    batch_size=16,
+    gradient_accumulation_steps=4,
+    num_epochs=100,
+    use_lora=True,
+    lora_r=32,
+    mixed_precision="bf16",
+)
+
+trainer = BehavioralCloning(model, config)
+trainer.train(dataset)
+```
+
+**Expected Results**:
+- Grasp success rate: > 85%
+- Training time: ~6 hours on RTX 4090
+
+---
+
+### Recipe 3.6: NYU Depth Indoor Navigation
+
+**Task**: Indoor navigation with RGB-D
+
+```python
+from model.vla import MultiSensorVLA
+from config import DatasetConfig
+
+# Dataset with depth
+dataset_config = DatasetConfig.with_depth(
+    dataset_name="nyu_depth_v2",
+    depth_clip_range=[0.0, 10.0],  # Indoor depth range
+)
+
+# Model with depth for navigation
+model = MultiSensorVLA(
+    vision_model_name="google/siglip-base-patch16-224",
+    llm_model_name="Qwen/Qwen2-1.5B-Instruct",
+    action_dim=2,  # [linear_vel, angular_vel]
+    use_depth=True,
+    use_imu=True,  # Also use IMU for stability
+    freeze_vision=True,
+    freeze_llm=True,
+)
 ```
 
 ---

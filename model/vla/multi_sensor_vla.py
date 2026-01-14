@@ -29,7 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from model.vlm import VisionEncoder, VisionEncoderConfig, VisionProjector
-from model.sensor import PointCloudEncoder, RadarEncoder, IMUEncoder
+from model.sensor import PointCloudEncoder, RadarEncoder, IMUEncoder, DepthEncoder
 from model.fusion import SensorFusion
 from model.action_head import MLPActionHead
 from model.utils import freeze_module, count_parameters, count_trainable_parameters
@@ -44,6 +44,7 @@ class MultiSensorVLA(nn.Module):
 
     Sensors supported:
     - Camera (RGB images via SigLIP/CLIP)
+    - Depth Camera (depth images via CNN)
     - LiDAR (point clouds via PointNet)
     - Radar (range-doppler maps via CNN)
     - IMU (temporal sequences via Transformer)
@@ -61,6 +62,7 @@ class MultiSensorVLA(nn.Module):
         llm_model_name: str = "Qwen/Qwen2-1.5B-Instruct",
         action_dim: int = 7,
         hidden_dim: int = 512,
+        use_depth: bool = False,
         use_lidar: bool = True,
         use_radar: bool = True,
         use_imu: bool = True,
@@ -73,6 +75,7 @@ class MultiSensorVLA(nn.Module):
 
         self.action_dim = action_dim
         self.action_chunk_size = action_chunk_size
+        self.use_depth = use_depth
         self.use_lidar = use_lidar
         self.use_radar = use_radar
         self.use_imu = use_imu
@@ -115,6 +118,14 @@ class MultiSensorVLA(nn.Module):
         )
 
         # Sensor encoders using sensor module
+        if use_depth:
+            self.depth_encoder = DepthEncoder(
+                input_channels=1,
+                output_dim=llm_dim,
+                num_tokens=16,
+            )
+            print("Depth encoder initialized")
+
         if use_lidar:
             self.lidar_encoder = PointCloudEncoder(
                 input_dim=4,
@@ -178,6 +189,7 @@ class MultiSensorVLA(nn.Module):
         pixel_values: torch.Tensor,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
+        depth_image: Optional[torch.Tensor] = None,
         lidar_points: Optional[torch.Tensor] = None,
         radar_data: Optional[torch.Tensor] = None,
         imu_data: Optional[torch.Tensor] = None,
@@ -190,6 +202,7 @@ class MultiSensorVLA(nn.Module):
             pixel_values: (batch, channels, height, width) camera image
             input_ids: (batch, seq_len) tokenized instruction
             attention_mask: (batch, seq_len)
+            depth_image: (batch, 1, height, width) depth image
             lidar_points: (batch, num_points, 4) point cloud
             radar_data: (batch, 2, H, W) range-doppler map
             imu_data: (batch, seq_len, 6) IMU readings
@@ -206,6 +219,11 @@ class MultiSensorVLA(nn.Module):
         # Camera
         camera_feat = self.encode_camera(pixel_values)
         sensor_features["camera"] = camera_feat
+
+        # Depth Camera
+        if self.use_depth and depth_image is not None:
+            depth_feat = self.depth_encoder(depth_image)
+            sensor_features["depth"] = depth_feat
 
         # LiDAR
         if self.use_lidar and lidar_points is not None:
@@ -260,6 +278,7 @@ class MultiSensorVLA(nn.Module):
         self,
         image,
         instruction: str,
+        depth_image: Optional[torch.Tensor] = None,
         lidar_points: Optional[torch.Tensor] = None,
         radar_data: Optional[torch.Tensor] = None,
         imu_data: Optional[torch.Tensor] = None,
@@ -271,6 +290,7 @@ class MultiSensorVLA(nn.Module):
         Args:
             image: PIL Image or tensor
             instruction: Text instruction
+            depth_image: Optional depth image
             lidar_points: Optional LiDAR point cloud
             radar_data: Optional radar data
             imu_data: Optional IMU data
@@ -306,6 +326,8 @@ class MultiSensorVLA(nn.Module):
         attention_mask = text_inputs.attention_mask.to(device)
 
         # Move sensor data to device if provided
+        if depth_image is not None:
+            depth_image = depth_image.unsqueeze(0).to(device) if depth_image.dim() == 3 else depth_image.to(device)
         if lidar_points is not None:
             lidar_points = lidar_points.unsqueeze(0).to(device) if lidar_points.dim() == 2 else lidar_points.to(device)
         if radar_data is not None:
@@ -317,6 +339,7 @@ class MultiSensorVLA(nn.Module):
             pixel_values=pixel_values,
             input_ids=input_ids,
             attention_mask=attention_mask,
+            depth_image=depth_image,
             lidar_points=lidar_points,
             radar_data=radar_data,
             imu_data=imu_data,
@@ -334,6 +357,8 @@ class MultiSensorVLA(nn.Module):
             "action_head": count_parameters(self.action_head),
         }
 
+        if self.use_depth:
+            counts["depth_encoder"] = count_parameters(self.depth_encoder)
         if self.use_lidar:
             counts["lidar_encoder"] = count_parameters(self.lidar_encoder)
         if self.use_radar:
@@ -356,6 +381,7 @@ if __name__ == "__main__":
         vision_model_name="google/siglip-base-patch16-224",
         llm_model_name="Qwen/Qwen2-1.5B-Instruct",
         action_dim=7,
+        use_depth=True,
         use_lidar=True,
         use_radar=True,
         use_imu=True,
@@ -374,6 +400,7 @@ if __name__ == "__main__":
 
     batch_size = 2
     dummy_image = torch.randn(batch_size, 3, 224, 224).to(device)
+    dummy_depth = torch.randn(batch_size, 1, 224, 224).to(device)
     dummy_lidar = torch.randn(batch_size, 4096, 4).to(device)
     dummy_radar = torch.randn(batch_size, 2, 64, 256).to(device)
     dummy_imu = torch.randn(batch_size, 100, 6).to(device)
@@ -389,6 +416,7 @@ if __name__ == "__main__":
             pixel_values=dummy_image,
             input_ids=dummy_text.input_ids.to(device),
             attention_mask=dummy_text.attention_mask.to(device),
+            depth_image=dummy_depth,
             lidar_points=dummy_lidar,
             radar_data=dummy_radar,
             imu_data=dummy_imu,

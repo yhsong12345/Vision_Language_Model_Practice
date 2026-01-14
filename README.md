@@ -11,7 +11,7 @@ A comprehensive framework for training **Vision-Language-Action (VLA)** models f
 - **Multiple VLA Architectures**: Custom VLA, OpenVLA-7B, SmolVLA-450M, Multi-Sensor VLA
 - **Flexible Action Heads**: MLP, Gaussian, Diffusion, Transformer
 - **Rich Training Paradigms**: BC, DAgger, GAIL, PPO, SAC, CQL, IQL, Decision Transformer
-- **Multi-Sensor Fusion**: Camera, LiDAR, Radar, IMU encoders
+- **Multi-Sensor Fusion**: Camera, Depth Camera, LiDAR, Radar, IMU encoders
 - **Embodiment Support**: Manipulation, Autonomous Driving, Humanoid Robots
 - **Production Ready**: ONNX, TorchScript, OpenVINO, Triton export
 - **Comprehensive Logging**: W&B integration, automatic best model saving, structured logs
@@ -108,7 +108,7 @@ python run.py demo inference  # Inference pipeline
 │   ├── vlm/                 # Vision-Language backbone
 │   ├── vla/                 # VLA implementations
 │   ├── action_head/         # Action prediction heads
-│   ├── sensor/              # LiDAR, Radar, IMU encoders
+│   ├── sensor/              # Depth, LiDAR, Radar, IMU encoders
 │   ├── fusion/              # Multi-modal fusion
 │   ├── temporal/            # History & memory modules
 │   ├── world_model/         # RSSM, dynamics models
@@ -230,6 +230,7 @@ experiments/my_run/
 |--------|----------|
 | **Manipulation** | LeRobot (PushT, ALOHA, xArm), Open X-Embodiment |
 | **Driving** | nuScenes, Waymo, CARLA |
+| **RGB-D / Depth** | NYU Depth V2, ScanNet, SUN RGB-D, GraspNet, ClearGrasp |
 | **Offline RL** | D4RL, RoboMimic |
 
 ## Model Export

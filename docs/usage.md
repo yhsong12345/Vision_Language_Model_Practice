@@ -198,7 +198,31 @@ config = DatasetConfig(
 
     # History
     history_length=1,  # Number of past observations
+
+    # Depth Camera (Optional)
+    use_depth=False,          # Enable depth processing
+    depth_size=224,           # Depth image resolution
+    depth_normalization="minmax",  # Normalization method
 )
+```
+
+### Multi-Sensor VLA Configuration
+
+```python
+from config import MultiSensorVLAConfig
+
+# For RGB-D manipulation
+config = MultiSensorVLAConfig.rgbd_manipulation()
+# Enables: RGB camera + Depth camera
+# Action dim: 7 (6DoF + gripper)
+
+# For autonomous driving
+config = MultiSensorVLAConfig.autonomous_driving()
+# Enables: Camera + LiDAR + Radar + IMU
+
+# For full sensor suite
+config = MultiSensorVLAConfig.full_sensor()
+# Enables: Camera + Depth + LiDAR + Radar + IMU
 ```
 
 ---

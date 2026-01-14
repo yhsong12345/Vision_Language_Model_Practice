@@ -130,6 +130,12 @@ class DatasetConfig:
     action_normalization: str = "minmax"  # minmax, standard, none
     action_clip_range: Optional[float] = None
 
+    # Depth processing
+    use_depth: bool = False
+    depth_size: int = 224
+    depth_normalization: str = "minmax"  # minmax, standard, none
+    depth_clip_range: Optional[List[float]] = None  # [min, max] in meters
+
     # Caching
     cache_dir: Optional[str] = None
     use_cache: bool = True
@@ -172,6 +178,26 @@ class DatasetConfig:
         return cls(
             dataset_name="berkeley-autolab/bridge_data_v2",
             image_size=224,
+        )
+
+    @classmethod
+    def with_depth(cls, dataset_name: str = "nyu_depth_v2", **kwargs) -> "DatasetConfig":
+        """Config for datasets with depth camera support."""
+        return cls(
+            dataset_name=dataset_name,
+            use_depth=True,
+            depth_size=224,
+            **kwargs,
+        )
+
+    @classmethod
+    def rgbd_manipulation(cls) -> "DatasetConfig":
+        """Config for RGB-D robot manipulation tasks."""
+        return cls(
+            dataset_name="graspnet",
+            use_depth=True,
+            depth_size=224,
+            depth_clip_range=[0.0, 2.0],
         )
 
 
@@ -226,5 +252,52 @@ DRIVING_DATASETS = {
         "description": "Simulated driving environment",
         "sensors": ["camera", "lidar", "radar", "imu", "gps"],
         "action_dim": 3,
+    },
+}
+
+
+# Depth camera datasets
+DEPTH_DATASETS = {
+    "nyu_depth_v2": {
+        "description": "NYU Depth V2 indoor scenes with RGB-D",
+        "sensors": ["camera", "depth"],
+        "depth_key": "depth",
+        "image_key": "image",
+        "depth_range": [0.0, 10.0],  # meters
+    },
+    "scannet": {
+        "description": "ScanNet indoor 3D reconstruction dataset",
+        "sensors": ["camera", "depth"],
+        "depth_key": "depth",
+        "image_key": "color",
+        "depth_range": [0.0, 10.0],
+    },
+    "sun_rgbd": {
+        "description": "SUN RGB-D indoor scene understanding",
+        "sensors": ["camera", "depth"],
+        "depth_key": "depth",
+        "image_key": "image",
+        "depth_range": [0.0, 10.0],
+    },
+    "matterport3d": {
+        "description": "Matterport3D indoor navigation",
+        "sensors": ["camera", "depth"],
+        "depth_key": "depth",
+        "image_key": "rgb",
+        "depth_range": [0.0, 20.0],
+    },
+    "cleargrasp": {
+        "description": "ClearGrasp transparent object depth",
+        "sensors": ["camera", "depth"],
+        "depth_key": "depth",
+        "image_key": "rgb",
+        "depth_range": [0.0, 2.0],
+    },
+    "graspnet": {
+        "description": "GraspNet-1Billion grasping dataset",
+        "sensors": ["camera", "depth"],
+        "depth_key": "depth",
+        "image_key": "rgb",
+        "depth_range": [0.0, 2.0],
     },
 }

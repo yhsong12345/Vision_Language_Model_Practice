@@ -25,6 +25,7 @@ class RobotDataset(Dataset):
 
     Returns standardized format:
     - pixel_values: (C, H, W) image tensor
+    - depth_image: (1, H, W) depth tensor (optional)
     - input_ids: (seq_len,) tokenized instruction
     - attention_mask: (seq_len,) attention mask
     - action: (action_dim,) action tensor
@@ -39,12 +40,16 @@ class RobotDataset(Dataset):
         max_samples: Optional[int] = None,
         max_text_length: int = 128,
         default_instruction: str = "Perform the manipulation task.",
+        use_depth: bool = False,
+        depth_size: int = 224,
     ):
         self.image_processor = image_processor
         self.tokenizer = tokenizer
         self.max_text_length = max_text_length
         self.default_instruction = default_instruction
         self.dataset_name = dataset_name
+        self.use_depth = use_depth
+        self.depth_size = depth_size
 
         # Try to load dataset
         self._load_dataset(dataset_name, split, max_samples)
@@ -84,11 +89,15 @@ class RobotDataset(Dataset):
 
         self.dummy_data = []
         for i in range(num_samples):
-            self.dummy_data.append({
+            sample = {
                 "image": np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8),
                 "instruction": instructions[i % len(instructions)],
                 "action": np.random.randn(7).astype(np.float32),
-            })
+            }
+            if self.use_depth:
+                # Create dummy depth image (values in meters, typical range 0-10m)
+                sample["depth"] = np.random.rand(224, 224).astype(np.float32) * 10.0
+            self.dummy_data.append(sample)
         self.dataset = self.dummy_data
 
     def __len__(self):
@@ -122,6 +131,54 @@ class RobotDataset(Dataset):
             image = Image.fromarray(image.numpy().astype(np.uint8))
 
         return image.convert("RGB")
+
+    def _get_depth_image(self, item: Dict) -> Optional[np.ndarray]:
+        """Extract and process depth image from dataset item."""
+        depth = None
+        # Try different depth keys
+        for key in ["depth", "observation.depth", "depth_image", "d", "rgbd"]:
+            if key in item:
+                depth = item[key]
+                break
+            # Handle nested observation dict
+            if "observation" in item and isinstance(item["observation"], dict):
+                if "depth" in item["observation"]:
+                    depth = item["observation"]["depth"]
+                    break
+
+        if depth is None:
+            return None
+
+        # Convert to numpy array if needed
+        if isinstance(depth, torch.Tensor):
+            depth = depth.numpy()
+        elif isinstance(depth, Image.Image):
+            depth = np.array(depth)
+
+        # Ensure float32
+        depth = depth.astype(np.float32)
+
+        # Handle different depth formats
+        if depth.ndim == 3:
+            # If RGB-D or multi-channel, take first channel
+            if depth.shape[0] in [1, 3, 4]:
+                depth = depth[0]
+            elif depth.shape[2] in [1, 3, 4]:
+                depth = depth[:, :, 0]
+
+        # Normalize depth to [0, 1] range
+        # Common depth ranges: 0-10m for indoor, 0-100m for outdoor
+        depth_min = np.nanmin(depth[depth > 0]) if np.any(depth > 0) else 0
+        depth_max = np.nanmax(depth[np.isfinite(depth)]) if np.any(np.isfinite(depth)) else 1
+
+        if depth_max > depth_min:
+            depth = (depth - depth_min) / (depth_max - depth_min)
+        depth = np.clip(depth, 0, 1)
+
+        # Handle invalid values (inf, nan)
+        depth = np.nan_to_num(depth, nan=0.0, posinf=1.0, neginf=0.0)
+
+        return depth
 
     def _get_instruction(self, item: Dict) -> str:
         """Extract instruction from dataset item."""
@@ -172,22 +229,45 @@ class RobotDataset(Dataset):
             max_length=self.max_text_length,
         )
 
-        return {
+        result = {
             "pixel_values": pixel_values,
             "input_ids": text_inputs.input_ids.squeeze(0),
             "attention_mask": text_inputs.attention_mask.squeeze(0),
             "action": torch.tensor(action, dtype=torch.float32),
         }
 
+        # Process depth image if enabled
+        if self.use_depth:
+            depth = self._get_depth_image(item)
+            if depth is not None:
+                # Resize depth to target size
+                depth_pil = Image.fromarray((depth * 255).astype(np.uint8))
+                depth_pil = depth_pil.resize((self.depth_size, self.depth_size), Image.BILINEAR)
+                depth = np.array(depth_pil).astype(np.float32) / 255.0
+                # Add channel dimension: (H, W) -> (1, H, W)
+                depth_tensor = torch.tensor(depth, dtype=torch.float32).unsqueeze(0)
+            else:
+                # Create zero depth if not available
+                depth_tensor = torch.zeros(1, self.depth_size, self.depth_size, dtype=torch.float32)
+            result["depth_image"] = depth_tensor
+
+        return result
+
 
 def collate_fn(batch: List[Dict]) -> Dict[str, torch.Tensor]:
     """Collate function for DataLoader."""
-    return {
+    result = {
         "pixel_values": torch.stack([x["pixel_values"] for x in batch]),
         "input_ids": torch.stack([x["input_ids"] for x in batch]),
         "attention_mask": torch.stack([x["attention_mask"] for x in batch]),
         "action": torch.stack([x["action"] for x in batch]),
     }
+
+    # Handle optional depth images
+    if "depth_image" in batch[0]:
+        result["depth_image"] = torch.stack([x["depth_image"] for x in batch])
+
+    return result
 
 
 def create_robot_dataloader(

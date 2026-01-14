@@ -75,6 +75,7 @@ model/
 │   ├── diffusion_action_head.py
 │   └── transformer_action_head.py
 ├── sensor/                 # Additional sensors
+│   ├── depth_encoder.py
 │   ├── lidar_encoder.py
 │   ├── radar_encoder.py
 │   └── imu_encoder.py
@@ -401,7 +402,59 @@ class TransformerActionHead(nn.Module):
 
 ## Sensor Encoders
 
-For multi-sensor VLA (e.g., autonomous driving).
+For multi-sensor VLA (e.g., autonomous driving, RGB-D manipulation).
+
+### Depth Camera Encoder
+
+```python
+class DepthEncoder(nn.Module):
+    """
+    Encodes single-channel depth images using CNNs.
+
+    Input: (B, 1, H, W) - Depth image (normalized 0-1)
+    Output: (B, num_tokens, output_dim) - Tokenized features
+
+    Variants:
+    - DepthEncoder: CNN-based, fast (default)
+    - DepthTransformerEncoder: ViT-style patches
+    - RGBDEncoder: Dual-branch RGB+Depth fusion
+    - MultiScaleDepthEncoder: Multi-resolution processing
+    """
+    def __init__(
+        self,
+        input_channels: int = 1,
+        output_dim: int = 256,
+        num_tokens: int = 16,
+    ):
+        # 4-layer CNN with stride-2 downsampling
+        self.backbone = nn.Sequential(
+            nn.Conv2d(1, 32, 3, stride=2, padding=1),
+            nn.Conv2d(32, 64, 3, stride=2, padding=1),
+            nn.Conv2d(64, 128, 3, stride=2, padding=1),
+            nn.Conv2d(128, output_dim, 3, stride=2, padding=1),
+            nn.AdaptiveAvgPool2d((4, 4)),
+        )
+        self.token_proj = nn.Linear(output_dim * 16, output_dim * num_tokens)
+```
+
+### RGB-D Fusion Encoder
+
+```python
+class RGBDEncoder(nn.Module):
+    """
+    Fuses RGB and Depth with separate branches.
+
+    Fusion types:
+    - 'concat': Concatenate features
+    - 'add': Element-wise addition
+    - 'cross_attention': Cross-modal attention
+
+    Input:
+    - rgb_image: (B, 3, H, W)
+    - depth_image: (B, 1, H, W)
+    Output: (B, num_tokens, output_dim)
+    """
+```
 
 ### LiDAR Encoder (PointNet++)
 
@@ -610,12 +663,18 @@ def plan(world_model, observation, horizon=15):
 - Language instruction
 - Simple action head
 
-### MultiSensorVLA (Autonomous Driving)
+### MultiSensorVLA (Autonomous Driving / RGB-D Manipulation)
 
 - Multi-camera (surround view)
+- Depth Camera support
 - LiDAR + Radar + IMU
 - BEV (Bird's Eye View) representation
 - Trajectory prediction
+
+**Presets:**
+- `rgbd_manipulation`: RGB + Depth for robot manipulation
+- `autonomous_driving`: Full sensor suite for vehicles
+- `full_sensor`: All sensors enabled
 
 ### OpenVLAWrapper (Pretrained)
 

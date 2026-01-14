@@ -93,6 +93,7 @@ class MultiSensorVLAConfig:
 
     Supports:
         - Camera (RGB)
+        - Depth Camera (depth images)
         - LiDAR (point clouds)
         - Radar (range-doppler)
         - IMU (accelerometer/gyroscope)
@@ -107,9 +108,16 @@ class MultiSensorVLAConfig:
     action_chunk_size: int = 1
 
     # Sensor configuration
+    use_depth: bool = False
     use_lidar: bool = True
     use_radar: bool = True
     use_imu: bool = True
+
+    # Depth camera config
+    depth_input_channels: int = 1
+    depth_image_size: int = 224
+    depth_output_dim: int = 256
+    depth_num_tokens: int = 16
 
     # LiDAR config
     lidar_input_dim: int = 4  # x, y, z, intensity
@@ -157,10 +165,34 @@ class MultiSensorVLAConfig:
         """Config for drone control."""
         return cls(
             action_dim=4,  # roll, pitch, yaw, throttle
+            use_depth=False,
             use_lidar=False,
             use_radar=False,
             use_imu=True,
             imu_seq_len=50,
+        )
+
+    @classmethod
+    def rgbd_manipulation(cls) -> "MultiSensorVLAConfig":
+        """Config for RGB-D robot manipulation."""
+        return cls(
+            action_dim=7,  # [x, y, z, roll, pitch, yaw, gripper]
+            use_depth=True,
+            use_lidar=False,
+            use_radar=False,
+            use_imu=False,
+            depth_num_tokens=16,
+        )
+
+    @classmethod
+    def full_sensor(cls) -> "MultiSensorVLAConfig":
+        """Config with all sensors enabled."""
+        return cls(
+            action_dim=7,
+            use_depth=True,
+            use_lidar=True,
+            use_radar=True,
+            use_imu=True,
         )
 
 
@@ -254,6 +286,8 @@ MODEL_CONFIGS = {
     "multi-sensor-driving": MultiSensorVLAConfig.autonomous_driving,
     "multi-sensor-robot": MultiSensorVLAConfig.mobile_robot,
     "multi-sensor-drone": MultiSensorVLAConfig.drone,
+    "multi-sensor-rgbd": MultiSensorVLAConfig.rgbd_manipulation,
+    "multi-sensor-full": MultiSensorVLAConfig.full_sensor,
     "openvla-efficient": OpenVLAConfig.memory_efficient,
     "openvla-balanced": OpenVLAConfig.balanced,
     "openvla-quality": OpenVLAConfig.high_quality,
