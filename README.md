@@ -61,6 +61,309 @@ python run.py demo carla      # CARLA driving
 python run.py demo inference  # Inference pipeline
 ```
 
+## Training Pipeline (Staged Approach)
+
+The VLA training follows a **multi-stage pipeline** inspired by LLaVA:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          VLA Training Pipeline                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Stage 1: VLM Pretraining (Optional - use pretrained VLM)                   │
+│  │                                                                          │
+│  │  ├── 1a. Vision-Language Alignment                                       │
+│  │  │       └── Train projector to align vision encoder with LLM            │
+│  │  │                                                                       │
+│  │  └── 1b. Visual Instruction Tuning                                       │
+│  │          └── Fine-tune on multimodal instruction data                    │
+│  │                                                                          │
+│  Stage 2: Action Head Training (Supervised Fine-tuning)                     │
+│  │                                                                          │
+│  │  └── Train action head on robot demonstrations                           │
+│  │      ├── MLP / Gaussian MLP (simple, fast)                               │
+│  │      ├── Diffusion Head (multi-modal actions)                            │
+│  │      └── Transformer Head (action sequences)                             │
+│  │                                                                          │
+│  Stage 3: Policy Improvement                                                │
+│  │                                                                          │
+│  │  ├── 3a. Imitation-based                                                 │
+│  │  │       ├── BC (Behavioral Cloning) - supervised baseline               │
+│  │  │       ├── DAgger (Dataset Aggregation) - expert-in-the-loop           │
+│  │  │       └── GAIL (Generative Adversarial IL) - learns implicit reward   │
+│  │  │                                                                       │
+│  │  ├── 3b. RL-based                                                        │
+│  │  │       │                                                               │
+│  │  │       ├── Online RL (requires simulator/environment)                  │
+│  │  │       │   ├── PPO (Proximal Policy Optimization) - on-policy          │
+│  │  │       │   ├── SAC (Soft Actor-Critic) - off-policy                    │
+│  │  │       │   └── GRPO (Group Relative PO) - LLM-style optimization       │
+│  │  │       │                                                               │
+│  │  │       └── Offline RL (from static datasets)                           │
+│  │  │           ├── CQL (Conservative Q-Learning) - penalizes OOD           │
+│  │  │           ├── IQL (Implicit Q-Learning) - stable, no max              │
+│  │  │           ├── TD3+BC - TD3 with BC regularization                     │
+│  │  │           └── Decision Transformer - sequence modeling                │
+│  │  │                                                                       │
+│  │  └── 3c. Model-based                                                     │
+│  │          │                                                               │
+│  │          └── World Model                                                 │
+│  │              ├── RSSM (Recurrent State-Space Model)                      │
+│  │              ├── Latent Dynamics Learning                                │
+│  │              ├── Imagination-based Planning                              │
+│  │              └── Dreamer-style Training                                  │
+│  │                                                                          │
+│  Stage 4: Deployment                                                        │
+│  │                                                                          │
+│  │  ├── Simulator (CARLA, Isaac Sim, MuJoCo)                                │
+│  │  └── Real Robot (ROS/ROS2 integration)                                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Stage 1: Vision-Language Alignment
+
+**Goal**: Train the vision projector to align visual features with LLM embeddings.
+
+```python
+from model.vlm import VLMModel
+from train.pretrain import VLMPretrainer, PretrainingDataset
+from config import PretrainingConfig
+
+# Create VLM model (no action head)
+model = VLMModel(
+    vision_model_name="google/siglip-base-patch16-224",
+    llm_model_name="Qwen/Qwen2-1.5B-Instruct",
+    projector_type="mlp",  # or "attention", "perceiver"
+)
+
+# Configure Stage 1
+config = PretrainingConfig(
+    output_dir="./pretrained_vlm",
+    dataset_name="liuhaotian/LLaVA-Pretrain",
+    stage1_epochs=1,
+    stage1_lr=1e-3,
+    freeze_vision=True,   # Freeze vision encoder
+    freeze_llm=True,      # Freeze LLM, only train projector
+)
+
+# Train alignment
+trainer = VLMPretrainer(model, config)
+alignment_data = PretrainingDataset(
+    "liuhaotian/LLaVA-Pretrain",
+    model.image_processor,
+    model.tokenizer,
+)
+trainer.train_stage1_alignment(alignment_data)
+```
+
+**What's trained**: Vision Projector only
+**Dataset**: Image-caption pairs (e.g., LLaVA-Pretrain 558K)
+**Duration**: ~1 epoch
+
+---
+
+### Stage 2: Visual Instruction Tuning
+
+**Goal**: Fine-tune the LLM to follow visual instructions.
+
+```python
+# Configure Stage 2 (continuing from Stage 1)
+config = PretrainingConfig(
+    output_dir="./pretrained_vlm",
+    instruction_dataset="liuhaotian/LLaVA-Instruct-150K",
+    stage2_epochs=1,
+    stage2_lr=2e-5,
+    freeze_vision=True,   # Keep vision frozen
+    freeze_llm=False,     # Unfreeze LLM for instruction tuning
+)
+
+# Train instruction following
+instruction_data = PretrainingDataset(
+    "liuhaotian/LLaVA-Instruct-150K",
+    model.image_processor,
+    model.tokenizer,
+)
+trainer.train_stage2_instruction(instruction_data)
+
+# Save pretrained VLM
+model.save_pretrained("./pretrained_vlm/vlm_final.pt")
+```
+
+**What's trained**: Vision Projector + LLM
+**Dataset**: Visual instruction data (e.g., LLaVA-Instruct 150K)
+**Duration**: ~1 epoch
+
+---
+
+### Stage 3: VLA Action Training
+
+**Goal**: Add action head and train for robot control using pretrained VLM.
+
+```python
+from model.vla import VLAModel
+from train.il import VLABehavioralCloning
+from train.datasets import create_lerobot_dataloader
+
+# Load pretrained VLM and add fresh action head
+vla_model = VLAModel.from_pretrained_vlm(
+    vlm_path="./pretrained_vlm/vlm_final.pt",
+    action_dim=7,                    # Robot action dimension
+    hidden_dim=512,                  # Action head hidden size
+    action_chunk_size=1,             # Actions per prediction
+    # Model config (must match pretrained VLM)
+    vision_model_name="google/siglip-base-patch16-224",
+    llm_model_name="Qwen/Qwen2-1.5B-Instruct",
+    # Fine-tuning strategy
+    freeze_vision=True,              # Keep vision frozen
+    freeze_llm=False,                # Fine-tune LLM for actions
+)
+
+# Train with robot demonstrations
+dataloader = create_lerobot_dataloader(
+    dataset_name="lerobot/pusht",
+    batch_size=32,
+)
+
+trainer = VLABehavioralCloning(
+    model=vla_model,
+    learning_rate=1e-4,
+    use_wandb=True,
+)
+trainer.train(dataloader)
+
+# Save final VLA model
+vla_model.save_pretrained("./trained_vla/vla_final.pt")
+```
+
+**What's trained**: Action Head + LLM (optionally)
+**Dataset**: Robot demonstration data (e.g., LeRobot, Open X-Embodiment)
+**Methods**: BC, DAgger, RL fine-tuning
+
+---
+
+### Quick Start: Full Pipeline
+
+```python
+from train.pretrain import pretrain_vlm
+from model.vla import VLAModel
+
+# Run full VLM pretraining (Stage 1 + Stage 2)
+vlm_model = pretrain_vlm(
+    vision_model="google/siglip-base-patch16-224",
+    llm_model="Qwen/Qwen2-1.5B-Instruct",
+    alignment_dataset="liuhaotian/LLaVA-Pretrain",
+    instruction_dataset="liuhaotian/LLaVA-Instruct-150K",
+    output_dir="./pretrained_vlm",
+)
+
+# Load as VLA for action training (Stage 3)
+vla_model = VLAModel.from_pretrained_vlm(
+    vlm_path="./pretrained_vlm/vlm_final.pt",
+    action_dim=7,
+)
+```
+
+---
+
+## Deployment
+
+### Stage 4: Model Export & Deployment
+
+After training, export your VLA model for production deployment.
+
+#### 4.1 Export to Production Formats
+
+```python
+from model.utils.export import (
+    ONNXExporter,
+    TorchScriptExporter,
+    OpenVINOExporter,
+    TritonExporter,
+)
+
+# Load trained VLA
+vla_model = VLAModel.from_pretrained("./trained_vla/vla_final.pt")
+vla_model.eval()
+
+# Export to ONNX (cross-platform)
+onnx_exporter = ONNXExporter(vla_model)
+onnx_exporter.export("./deployed/vla_model.onnx")
+
+# Export to TorchScript (PyTorch production)
+ts_exporter = TorchScriptExporter(vla_model)
+ts_exporter.export("./deployed/vla_model.pt")
+
+# Export to OpenVINO (Intel hardware)
+ov_exporter = OpenVINOExporter(vla_model)
+ov_exporter.export("./deployed/vla_openvino/")
+
+# Export to Triton (NVIDIA inference server)
+triton_exporter = TritonExporter(vla_model)
+triton_exporter.export("./deployed/triton_model/")
+```
+
+#### 4.2 Quantization for Edge Deployment
+
+```python
+from model.utils.export import QuantizationExporter
+
+# INT8 quantization for faster inference
+quant_exporter = QuantizationExporter(vla_model)
+quant_exporter.export(
+    "./deployed/vla_quantized.onnx",
+    quantization_type="int8",  # or "fp16"
+)
+```
+
+#### 4.3 Inference Pipeline
+
+```python
+from model.vla import VLAModel
+from PIL import Image
+
+# Load model for inference
+model = VLAModel.from_pretrained("./trained_vla/vla_final.pt")
+model.eval()
+model.cuda()
+
+# Run inference
+image = Image.open("camera_frame.jpg")
+instruction = "Pick up the red block and place it on the blue plate"
+
+action = model.predict_action(image, instruction)
+# action: tensor([x, y, z, rx, ry, rz, gripper])
+```
+
+#### 4.4 ROS Integration
+
+```python
+# See integration/ros/ for ROS node implementation
+from integration.ros import VLAActionServer
+
+# Start ROS action server
+server = VLAActionServer(
+    model_path="./trained_vla/vla_final.pt",
+    action_topic="/vla/action",
+    image_topic="/camera/rgb/image_raw",
+)
+server.run()
+```
+
+---
+
+## Pipeline Summary
+
+| Stage | Goal | What's Trained | What's Frozen | Dataset |
+|-------|------|----------------|---------------|---------|
+| **1a** | Vision-Language Alignment | Projector | Vision + LLM | Image-caption pairs |
+| **1b** | Visual Instruction Tuning | Projector + LLM | Vision | Visual QA/Instructions |
+| **2** | Action Head Training (BC) | Action Head | Vision + Projector + LLM (or LoRA) | Robot demonstrations |
+| **3** | Policy Improvement (RL/IL) | Action Head (+LLM lightly) | Vision + Projector | RL env / more demos |
+| **4** | Deployment | - | - | - |
+
+---
+
 ## Architecture
 
 ```

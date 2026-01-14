@@ -263,6 +263,98 @@ class VLAModel(nn.Module):
         model.load_state_dict(state_dict)
         return model
 
+    @classmethod
+    def from_pretrained_vlm(
+        cls,
+        vlm_path: str,
+        action_dim: int = 7,
+        hidden_dim: int = 512,
+        action_chunk_size: int = 1,
+        dropout: float = 0.1,
+        strict: bool = False,
+        **kwargs,
+    ):
+        """
+        Create VLA model from pretrained VLM weights.
+
+        Loads vision encoder, vision projector, and LLM from a pretrained VLM checkpoint,
+        then initializes a fresh action head for VLA training.
+
+        Args:
+            vlm_path: Path to pretrained VLM checkpoint
+            action_dim: Dimension of action space
+            hidden_dim: Hidden dimension for action head
+            action_chunk_size: Number of actions to predict at once
+            dropout: Dropout probability for action head
+            strict: Whether to require exact match of state dict keys
+            **kwargs: Additional arguments for VLAModel (e.g., freeze_vision, freeze_llm)
+
+        Returns:
+            VLAModel with pretrained VLM weights and fresh action head
+        """
+        # Load VLM state dict to get model config
+        vlm_state_dict = torch.load(vlm_path, map_location="cpu", weights_only=True)
+
+        # Extract model names from state dict keys or use defaults
+        # We need to create the model first, then load weights
+        model = cls(
+            action_dim=action_dim,
+            hidden_dim=hidden_dim,
+            action_chunk_size=action_chunk_size,
+            dropout=dropout,
+            **kwargs,
+        )
+
+        # Filter VLM weights (exclude action head if present, handle LM head difference)
+        vlm_keys = set(vlm_state_dict.keys())
+        model_keys = set(model.state_dict().keys())
+
+        # Map VLM keys to VLA keys (handle causal LM vs base model difference)
+        mapped_state_dict = {}
+        for key, value in vlm_state_dict.items():
+            # Skip action head weights from VLM (shouldn't exist but just in case)
+            if key.startswith("action_head."):
+                continue
+
+            # Handle LLM key mapping: VLM uses AutoModelForCausalLM, VLA uses AutoModel
+            # AutoModelForCausalLM wraps the base model, so keys might have 'model.' prefix
+            if key.startswith("llm.model."):
+                # VLM: llm.model.layers... -> VLA: llm.layers...
+                new_key = "llm." + key[len("llm.model."):]
+                if new_key in model_keys:
+                    mapped_state_dict[new_key] = value
+                    continue
+
+            # Skip lm_head weights (VLM has this, VLA doesn't need it)
+            if key.startswith("llm.lm_head."):
+                continue
+
+            # Direct mapping for other keys
+            if key in model_keys:
+                mapped_state_dict[key] = value
+
+        # Load the mapped weights
+        missing_keys, unexpected_keys = model.load_state_dict(mapped_state_dict, strict=False)
+
+        # Report loading status
+        loaded_keys = set(mapped_state_dict.keys())
+        print(f"Loaded {len(loaded_keys)} weights from pretrained VLM")
+
+        if missing_keys:
+            # Filter out expected missing keys (action head)
+            action_head_keys = [k for k in missing_keys if k.startswith("action_head.")]
+            other_missing = [k for k in missing_keys if not k.startswith("action_head.")]
+
+            if action_head_keys:
+                print(f"Action head initialized fresh ({len(action_head_keys)} parameters)")
+            if other_missing:
+                print(f"Warning: Missing keys (not loaded): {other_missing[:5]}...")
+
+        if unexpected_keys:
+            print(f"Note: Skipped {len(unexpected_keys)} VLM-specific keys (e.g., lm_head)")
+
+        return model
+
     def save_pretrained(self, path: str):
         """Save the VLA model."""
         torch.save(self.state_dict(), path)

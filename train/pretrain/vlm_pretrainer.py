@@ -6,27 +6,28 @@ Main class for Vision-Language Model pretraining following LLaVA paradigm:
 2. Stage 2 (Instruction): Fine-tune LLM on visual instruction data
 """
 
+import json
 import os
+import sys
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
+
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset
-from torch.optim import AdamW
-from transformers import (
-    get_linear_schedule_with_warmup,
-    get_cosine_schedule_with_warmup,
-)
-from accelerate import Accelerator
-from tqdm import tqdm
 import wandb
-from typing import Optional, Dict, Any
-from dataclasses import dataclass
-import json
+from accelerate import Accelerator
+from torch.optim import AdamW
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+from transformers import (
+    get_cosine_schedule_with_warmup,
+    get_linear_schedule_with_warmup,
+)
 
-import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from model.vla import VLAModel
 from config.training_config import PretrainingConfig
+from model.vlm import VLMModel
 
 
 class PretrainingDataset(Dataset):
@@ -46,6 +47,7 @@ class PretrainingDataset(Dataset):
 
         try:
             from datasets import load_dataset
+
             self.dataset = load_dataset(dataset_name, split=split)
         except Exception as e:
             print(f"Could not load dataset: {e}")
@@ -106,7 +108,7 @@ class VLMPretrainer:
 
     def __init__(
         self,
-        model: VLAModel,
+        model: VLMModel,
         config: PretrainingConfig,
     ):
         self.model = model
@@ -153,12 +155,16 @@ class VLMPretrainer:
             train_dataset,
             batch_size=self.config.batch_size,
             shuffle=True,
-            num_workers=self.config.num_workers if hasattr(self.config, 'num_workers') else 4,
+            num_workers=(
+                self.config.num_workers if hasattr(self.config, "num_workers") else 4
+            ),
             pin_memory=True,
         )
 
         # Optimizer (only projector parameters)
-        projector_params = [p for p in self.model.vision_projector.parameters() if p.requires_grad]
+        projector_params = [
+            p for p in self.model.vision_projector.parameters() if p.requires_grad
+        ]
         optimizer = AdamW(
             projector_params,
             lr=self.config.alignment_lr,
@@ -217,11 +223,13 @@ class VLMPretrainer:
                 # Logging
                 if global_step % self.config.logging_steps == 0:
                     if self.config.use_wandb and self.accelerator.is_main_process:
-                        wandb.log({
-                            "stage1/loss": loss.item(),
-                            "stage1/lr": scheduler.get_last_lr()[0],
-                            "stage1/step": global_step,
-                        })
+                        wandb.log(
+                            {
+                                "stage1/loss": loss.item(),
+                                "stage1/lr": scheduler.get_last_lr()[0],
+                                "stage1/step": global_step,
+                            }
+                        )
 
                 progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
 
@@ -256,7 +264,9 @@ class VLMPretrainer:
             train_dataset,
             batch_size=self.config.batch_size,
             shuffle=True,
-            num_workers=self.config.num_workers if hasattr(self.config, 'num_workers') else 4,
+            num_workers=(
+                self.config.num_workers if hasattr(self.config, "num_workers") else 4
+            ),
             pin_memory=True,
         )
 
@@ -321,11 +331,13 @@ class VLMPretrainer:
                 # Logging
                 if global_step % self.config.logging_steps == 0:
                     if self.config.use_wandb and self.accelerator.is_main_process:
-                        wandb.log({
-                            "stage2/loss": loss.item(),
-                            "stage2/lr": scheduler.get_last_lr()[0],
-                            "stage2/step": global_step,
-                        })
+                        wandb.log(
+                            {
+                                "stage2/loss": loss.item(),
+                                "stage2/lr": scheduler.get_last_lr()[0],
+                                "stage2/step": global_step,
+                            }
+                        )
 
                 # Save checkpoint
                 if global_step % self.config.save_steps == 0:
@@ -345,7 +357,9 @@ class VLMPretrainer:
         # Save final checkpoint
         self._save_checkpoint("stage2_final")
 
-    def _alignment_forward(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def _alignment_forward(
+        self, batch: Dict[str, torch.Tensor]
+    ) -> Dict[str, torch.Tensor]:
         """Forward pass for alignment training (projector only)."""
         pixel_values = batch["pixel_values"]
         input_ids = batch["input_ids"]
@@ -365,9 +379,10 @@ class VLMPretrainer:
 
         # Create attention mask
         vision_mask = torch.ones(
-            batch_size, num_vision_tokens,
+            batch_size,
+            num_vision_tokens,
             device=attention_mask.device,
-            dtype=attention_mask.dtype
+            dtype=attention_mask.dtype,
         )
         combined_mask = torch.cat([vision_mask, attention_mask], dim=1)
 
@@ -377,7 +392,7 @@ class VLMPretrainer:
             (batch_size, num_vision_tokens),
             -100,
             device=labels.device,
-            dtype=labels.dtype
+            dtype=labels.dtype,
         )
         combined_labels = torch.cat([vision_labels, labels], dim=1)
 
@@ -390,7 +405,9 @@ class VLMPretrainer:
 
         return {"loss": outputs.loss}
 
-    def _instruction_forward(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def _instruction_forward(
+        self, batch: Dict[str, torch.Tensor]
+    ) -> Dict[str, torch.Tensor]:
         """Forward pass for instruction tuning."""
         # Same as alignment forward but with full model training
         return self._alignment_forward(batch)
@@ -468,10 +485,9 @@ def pretrain_vlm(
         **kwargs: Additional config arguments
     """
     # Create model
-    model = VLAModel(
+    model = VLMModel(
         vision_model_name=vision_model,
         llm_model_name=llm_model,
-        action_dim=7,
     )
 
     # Create config
