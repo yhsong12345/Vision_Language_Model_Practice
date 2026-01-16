@@ -39,7 +39,7 @@ av>=12.0.0             # Video processing
 # Depth Processing (Optional)
 # ===================
 # For depth estimation models
-# pip install timm  # For DPT/MiDaS backbones
+pip install timm  # For DPT/MiDaS backbones
 
 # ===================
 # Scientific Computing
@@ -53,29 +53,29 @@ scipy>=1.13.0
 gymnasium>=0.29.0
 
 # MuJoCo (for humanoid/manipulation simulation)
-# pip install gymnasium[mujoco]
-# mujoco>=3.1.0
+pip install gymnasium[mujoco]
+mujoco>=3.1.0
 
 # D4RL (for offline RL datasets)
-# pip install git+https://github.com/Farama-Foundation/D4RL.git
+pip install git+https://github.com/Farama-Foundation/D4RL.git
 
 # ===================
 # Robotics Datasets
 # ===================
 # LeRobot (manipulation datasets)
-# pip install lerobot
+pip install lerobot
 
 # Open X-Embodiment
-# pip install tensorflow tensorflow-datasets
+pip install tensorflow tensorflow-datasets
 
 # ===================
 # Autonomous Driving
 # ===================
 # nuScenes
-# pip install nuscenes-devkit
+pip install nuscenes-devkit
 
 # CARLA (simulator)
-# pip install carla
+pip install carla
 
 # ===================
 # Visualization & Logging
@@ -115,14 +115,14 @@ filelock>=3.15.0
 # ===================
 # Optional: Flash Attention (faster attention, CUDA only)
 # ===================
-# pip install flash-attn --no-build-isolation
+pip install flash-attn --no-build-isolation
 
 # ===================
 # Optional: Triton (for custom CUDA kernels)
 # ===================
-# pip install triton>=2.3.0
+pip install triton>=2.3.0
 
 # ===================
 # Optional: vLLM (for fast inference)
 # ===================
-# pip install vllm
+pip install vllm
