@@ -1288,6 +1288,23 @@ This guide covered robot manipulation VLA training:
 
 ---
 
+## Datasets Used for Each Training Step
+
+| Training Stage | Dataset | Public Source | Description |
+|----------------|---------|---------------|-------------|
+| **Stage 1: Vision-Language Foundation** | LLaVA-Pretrain | [liuhaotian/LLaVA-Pretrain](https://huggingface.co/datasets/liuhaotian/LLaVA-Pretrain) | 558K image-caption pairs |
+| **Stage 1: Vision-Language Foundation** | LLaVA-Instruct-150K | [liuhaotian/LLaVA-Instruct-150K](https://huggingface.co/datasets/liuhaotian/LLaVA-Instruct-150K) | 150K visual QA pairs |
+| **Stage 2: Action Head Training** | LeRobot | [lerobot on HuggingFace](https://huggingface.co/lerobot) | 100K+ episodes for manipulation tasks |
+| **Stage 3: Behavioral Cloning** | Open X-Embodiment | [jxu124/OpenX-Embodiment](https://huggingface.co/datasets/jxu124/OpenX-Embodiment) | 1M+ episodes, 22+ robot types |
+| **Stage 3: Behavioral Cloning** | RoboMimic | [amandlek/robomimic](https://huggingface.co/datasets/amandlek/robomimic) | Simulated manipulation (lift, can, square, transport) |
+| **Stage 3: Behavioral Cloning** | DROID | [cadene/droid](https://huggingface.co/datasets/cadene/droid) | 76K trajectories, real robot manipulation |
+| **Stage 3: Behavioral Cloning** | BridgeData V2 | [IPEC-COMMUNITY/bridge_orig_lerobot](https://huggingface.co/datasets/IPEC-COMMUNITY/bridge_orig_lerobot) | 60K trajectories, kitchen manipulation |
+| **Stage 4: Policy Improvement (DAgger)** | Online collection | Varies | Expert corrections during rollouts |
+| **Stage 4: Policy Improvement (GAIL)** | Expert demonstrations | Varies | Human demonstrations for adversarial imitation |
+| **Stage 5: Multi-Task Training** | LIBERO | [HuggingFaceVLA/libero](https://huggingface.co/datasets/HuggingFaceVLA/libero) | 130 tasks, language-conditioned |
+
+---
+
 ## Related Documents
 
 - [Training Pipeline Overview](training_pipeline_overview.md)

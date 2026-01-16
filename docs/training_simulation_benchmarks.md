@@ -1304,6 +1304,19 @@ This guide covered simulation benchmark training:
 
 ---
 
+## Datasets Used for Each Training Step
+
+| Benchmark | Dataset | Public Source | Tasks | Key Features |
+|-----------|---------|---------------|-------|--------------|
+| **D4RL** | D4RL datasets | [imone/D4RL](https://huggingface.co/datasets/imone/D4RL) | 12 tasks | hopper-medium-v2, walker2d-medium-expert-v2, etc. |
+| **MetaWorld** | MetaWorld MT50 | [lerobot/metaworld_mt50](https://huggingface.co/datasets/lerobot/metaworld_mt50) | 50 tasks | Multi-task manipulation with language |
+| **RoboMimic** | RoboMimic datasets | [amandlek/robomimic](https://huggingface.co/datasets/amandlek/robomimic) | 5 tasks | Human demonstrations (lift, can, square, transport) |
+| **MuJoCo** | D4RL MuJoCo | [imone/D4RL](https://huggingface.co/datasets/imone/D4RL) | 8 tasks | Locomotion/control (Ant, HalfCheetah, Humanoid, Hopper) |
+| **LIBERO** | LIBERO datasets | [HuggingFaceVLA/libero](https://huggingface.co/datasets/HuggingFaceVLA/libero) | 130 tasks | Language-conditioned (spatial, object, goal suites) |
+| **Calvin** | Calvin datasets | [mees/calvin](https://github.com/mees/calvin) | 34 tasks | Long-horizon chained task completion |
+
+---
+
 ## Related Documents
 
 - [Training Pipeline Overview](training_pipeline_overview.md)

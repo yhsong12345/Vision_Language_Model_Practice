@@ -2622,6 +2622,25 @@ This guide covered the complete training pipeline for autonomous driving VLA:
 
 ---
 
+## Datasets Used for Each Training Step
+
+| Training Stage | Dataset | Public Source | Description |
+|----------------|---------|---------------|-------------|
+| **Stage 1: VLM Foundation** | LLaVA-Pretrain | [liuhaotian/LLaVA-Pretrain](https://huggingface.co/datasets/liuhaotian/LLaVA-Pretrain) | 558K image-caption pairs for vision-language alignment |
+| **Stage 2: Multi-Sensor Fusion** | nuScenes | [OpenDriveLab/DriveLM](https://huggingface.co/datasets/OpenDriveLab/DriveLM) (nuScenes subset) | 1000 scenes, 6 cameras + LiDAR + Radar |
+| **Stage 2: Multi-Sensor Fusion** | Waymo Open Dataset | [waymo.com/open](https://waymo.com/open/download) | 1150 scenes, multi-sensor driving data |
+| **Stage 3: Trajectory Prediction** | nuScenes | [KevinNotSmile/nuscenes-qa-mini](https://huggingface.co/datasets/KevinNotSmile/nuscenes-qa-mini) | 6-second trajectory prediction |
+| **Stage 3: Control Training** | CARLA Autopilot | [immanuelpeter/carla-autopilot-multimodal-dataset](https://huggingface.co/datasets/immanuelpeter/carla-autopilot-multimodal-dataset) | RGB, LiDAR, segmentation, control signals |
+| **Stage 3: Control Training** | PDM-Lite CARLA | [autonomousvision/PDM_Lite_Carla_LB2](https://huggingface.co/datasets/autonomousvision/PDM_Lite_Carla_LB2) | CARLA Leaderboard 2.0 expert data |
+| **Stage 4: Policy Improvement** | CARLA IPL | [isp-uv-es/IPL-CARLA-dataset](https://huggingface.co/datasets/isp-uv-es/IPL-CARLA-dataset) | 20K images with semantic segmentation |
+| **Stage 5: Safety Training** | CARLA Segmentation | [nightmare-nectarine/segmentation-carla-driving](https://huggingface.co/datasets/nightmare-nectarine/segmentation-carla-driving) | 80 episodes for imitation learning |
+| **Stage 6: Simulation Training** | NVIDIA PhysicalAI-AV | [nvidia/PhysicalAI-Autonomous-Vehicles](https://huggingface.co/datasets/nvidia/PhysicalAI-Autonomous-Vehicles) | Autonomous vehicle simulation data |
+| **Stage 7: Domain Adaptation** | Real driving logs | Varies | Fine-tuning for deployment |
+| **Evaluation** | nuScenes test split | [nuscenes.org](https://www.nuscenes.org/) | minADE, minFDE, collision rate |
+| **Evaluation** | CARLA benchmarks | [carla.org](https://carla.org/) | Route completion, infraction score |
+
+---
+
 ## Related Documents
 
 - [Training Pipeline Overview](training_pipeline_overview.md)

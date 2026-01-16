@@ -1460,6 +1460,20 @@ This guide covered embodiment-specific VLA training:
 
 ---
 
+## Datasets Used for Each Training Step
+
+| Training Stage | Dataset | Public Source | Description |
+|----------------|---------|---------------|-------------|
+| **Proprioception Pretraining** | Robot-specific data | Varies | Next state prediction and action reconstruction |
+| **Vision-Proprio Alignment** | Vision-Proprioception pairs | Varies | Contrastive learning between vision and proprioception |
+| **Cross-Embodiment Training** | Open X-Embodiment | [jxu124/OpenX-Embodiment](https://huggingface.co/datasets/jxu124/OpenX-Embodiment) | 1M+ episodes, 22+ robot types (1.13TB) |
+| **Task-Specific Training** | LeRobot | [lerobot on HuggingFace](https://huggingface.co/lerobot) | 100K+ episodes for manipulation tasks |
+| **Task-Specific Training** | RoboMimic | [amandlek/robomimic](https://huggingface.co/datasets/amandlek/robomimic) | Simulated manipulation demonstrations |
+| **Task-Specific Training** | DROID | [cadene/droid](https://huggingface.co/datasets/cadene/droid) or [lerobot/droid_100](https://huggingface.co/datasets/lerobot/droid_100) | 76K trajectories, 350 hours of interaction |
+| **Task-Specific Training** | BridgeData V2 | [IPEC-COMMUNITY/bridge_orig_lerobot](https://huggingface.co/datasets/IPEC-COMMUNITY/bridge_orig_lerobot) | 60K trajectories, kitchen manipulation |
+
+---
+
 ## Related Documents
 
 - [Training Pipeline Overview](training_pipeline_overview.md)

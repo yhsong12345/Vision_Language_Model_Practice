@@ -2563,6 +2563,24 @@ This guide covered the complete training pipeline for temporal and world model V
 
 ---
 
+## Datasets Used for Each Training Step
+
+| Training Stage | Dataset | Public Source | Description |
+|----------------|---------|---------------|-------------|
+| **Stage 1: Temporal Encoder Training** | Robot trajectory datasets | [jxu124/OpenX-Embodiment](https://huggingface.co/datasets/jxu124/OpenX-Embodiment) | Sequential observation data for history encoding |
+| **Stage 2: World Model Training** | D4RL MuJoCo | [imone/D4RL](https://huggingface.co/datasets/imone/D4RL) | DMControl benchmark tasks for dynamics learning |
+| **Stage 2: World Model Training** | Visual D4RL (VD4RL) | [conglu/vd4rl](https://huggingface.co/datasets/conglu/vd4rl) | Pixel-based offline RL benchmarks |
+| **Stage 3: Latent Dynamics Learning** | Robot manipulation data | [lerobot on HuggingFace](https://huggingface.co/lerobot) | Action-conditioned state transitions |
+| **Stage 4: Imagination-Based Planning** | D4RL | [imone/D4RL](https://huggingface.co/datasets/imone/D4RL) | Environment for imagination-based training |
+| **Stage 5: Model Predictive Control** | Online rollouts | Varies | MPC trajectory optimization |
+| **Stage 6: Policy Learning** | Imagined trajectories | Varies | Dyna-style training with world model |
+| **Evaluation** | D4RL MuJoCo | [imone/D4RL](https://huggingface.co/datasets/imone/D4RL) | Walker, Cheetah, Humanoid benchmarks |
+| **Evaluation** | MetaWorld | [lerobot/metaworld_mt50](https://huggingface.co/datasets/lerobot/metaworld_mt50) | Multi-task manipulation |
+| **Video Prediction** | RoboNet | [jxu124/OpenX-Embodiment](https://huggingface.co/datasets/jxu124/OpenX-Embodiment) (subset) | Robot video prediction |
+| **Video Prediction** | BAIR robot pushing | [tensorflow.org/datasets](https://www.tensorflow.org/datasets/catalog/bair_robot_pushing_small) | Robot pushing video prediction |
+
+---
+
 ## Related Documents
 
 - [Training Pipeline Overview](training_pipeline_overview.md)

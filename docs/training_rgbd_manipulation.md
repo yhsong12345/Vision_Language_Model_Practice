@@ -1255,6 +1255,22 @@ This guide covered RGB-D manipulation VLA training:
 
 ---
 
+## Datasets Used for Each Training Step
+
+| Training Stage | Dataset | Public Source | Description |
+|----------------|---------|---------------|-------------|
+| **Stage 1: Depth Encoder Pretraining** | NYU Depth v2 | [sayakpaul/nyu_depth_v2](https://huggingface.co/datasets/sayakpaul/nyu_depth_v2) | 464 scenes indoor RGB-D |
+| **Stage 1: Depth Encoder Pretraining** | ScanNet | [yuchen0187/scannet](https://huggingface.co/datasets/yuchen0187/scannet) | 1513 scenes 3D indoor reconstruction |
+| **Stage 2: RGB-D Fusion Training** | GraspNet-1Billion | [graspnet.net](https://graspnet.net/) | 88 objects, 190 scenes, 1.1B grasps |
+| **Stage 2: RGB-D Fusion Training** | Cornell Grasping | [cornell grasp dataset](http://pr.cs.cornell.edu/grasping/rect_data/data.php) | 240 objects, 8K rectangle grasp annotations |
+| **Stage 2: RGB-D Fusion Training** | Jacquard | [jacquard.liris.cnrs.fr](https://jacquard.liris.cnrs.fr/) | 11K objects, 1.1M grasps |
+| **Stage 3: Grasp Pose Estimation** | GraspNet-1Billion | [graspnet.net](https://graspnet.net/) | 1.1B 6-DoF grasp annotations |
+| **Stage 4: Depth-Aware Manipulation** | OCID | [ocid-dataset.github.io](https://www.acin.tuwien.ac.at/en/vision-for-robotics/software-tools/object-clutter-indoor-dataset/) | 89 objects, 2K scenes segmentation |
+| **Stage 4: Depth-Aware Manipulation** | YCB-Video | [rse-lab.cs.washington.edu](https://rse-lab.cs.washington.edu/projects/posecnn/) | 21 objects, 92 scenes pose estimation |
+| **Evaluation** | GraspNet-1Billion test split | [graspnet.net](https://graspnet.net/) | Grasp success rate evaluation |
+
+---
+
 ## Related Documents
 
 - [Training Pipeline Overview](training_pipeline_overview.md)

@@ -719,6 +719,25 @@ config.llm = "qwen2-0.5b"
 
 ---
 
+## Datasets Used for Each Training Step
+
+| Training Task | Dataset | Public Source | Description |
+|---------------|---------|---------------|-------------|
+| **Recipe 1: PushT** | lerobot/pusht | [lerobot/pusht](https://huggingface.co/datasets/lerobot/pusht) | 2D manipulation task demonstrations |
+| **Recipe 2: ALOHA Bimanual** | lerobot/aloha_transfer_cube_human | [lerobot/aloha_transfer_cube_human](https://huggingface.co/datasets/lerobot/aloha_transfer_cube_human) | Dual-arm bimanual manipulation |
+| **Recipe 3: xArm Pick and Place** | lerobot/xarm_pick_place | [lerobot on HuggingFace](https://huggingface.co/lerobot) | Single-arm pick and place |
+| **Recipe 3.5: RGB-D Grasping** | GraspNet-1Billion | [graspnet.net](https://graspnet.net/) | 88 objects, 190 scenes, 1.1B grasps |
+| **Recipe 3.6: Indoor Navigation** | NYU Depth v2 | [sayakpaul/nyu_depth_v2](https://huggingface.co/datasets/sayakpaul/nyu_depth_v2) | Indoor RGB-D navigation |
+| **Recipe 4: CARLA Driving** | CARLA Autopilot | [immanuelpeter/carla-autopilot-multimodal-dataset](https://huggingface.co/datasets/immanuelpeter/carla-autopilot-multimodal-dataset) | Urban driving with multi-camera + LiDAR |
+| **Recipe 5: nuScenes Prediction** | nuScenes | [OpenDriveLab/DriveLM](https://huggingface.co/datasets/OpenDriveLab/DriveLM) | 1000 scenes, 6 cameras, LiDAR, Radar |
+| **Recipe 6: MuJoCo Humanoid** | D4RL MuJoCo | [imone/D4RL](https://huggingface.co/datasets/imone/D4RL) | Ant, Humanoid, HalfCheetah locomotion |
+| **Recipe 6: MuJoCo Humanoid** | Motion capture (AMASS) | [amass.is.tue.mpg.de](https://amass.is.tue.mpg.de/) | BC initialization from MoCap |
+| **Recipe 7: Whole-Body Manipulation** | Human demonstrations | Varies | GAIL adversarial imitation |
+| **Recipe 8: D4RL Offline RL** | D4RL | [imone/D4RL](https://huggingface.co/datasets/imone/D4RL) | hopper-medium-v2, walker2d, etc. |
+| **Recipe 9: MetaWorld Multi-Task** | MetaWorld MT50 | [lerobot/metaworld_mt50](https://huggingface.co/datasets/lerobot/metaworld_mt50) | 50 manipulation tasks, 2500 episodes |
+
+---
+
 ## Next Steps
 
 - See [Usage Guide](usage.md) for basic usage

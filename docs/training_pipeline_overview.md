@@ -659,6 +659,19 @@ python run.py list
 
 ---
 
+## Datasets Used for Each Training Step
+
+| Training Stage | Dataset | Public Source | Description |
+|----------------|---------|---------------|-------------|
+| **Stage 1a: Vision-Language Alignment** | LLaVA-Pretrain | [liuhaotian/LLaVA-Pretrain](https://huggingface.co/datasets/liuhaotian/LLaVA-Pretrain) | 558K image-caption pairs for training vision projector |
+| **Stage 1b: Visual Instruction Tuning** | LLaVA-Instruct-150K | [liuhaotian/LLaVA-Instruct-150K](https://huggingface.co/datasets/liuhaotian/LLaVA-Instruct-150K) | 150K visual QA pairs for instruction tuning |
+| **Stage 2: Action Head Training** | LeRobot | [lerobot on HuggingFace](https://huggingface.co/lerobot) | 100K+ episodes for robot manipulation tasks |
+| **Stage 2: Action Head Training** | Open X-Embodiment | [jxu124/OpenX-Embodiment](https://huggingface.co/datasets/jxu124/OpenX-Embodiment) | 1M+ episodes, 22+ robot types (1.13TB) |
+| **Stage 3: Offline RL** | D4RL | [imone/D4RL](https://huggingface.co/datasets/imone/D4RL) | 12 standardized offline RL benchmark tasks |
+| **Stage 3: Model-Based RL** | Robot trajectory data | Varies | Environment-specific trajectory datasets for world model training |
+
+---
+
 ## Next Steps
 
 1. Choose your target application:
