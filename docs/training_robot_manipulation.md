@@ -1299,8 +1299,11 @@ This guide covered robot manipulation VLA training:
 | **Stage 3: Behavioral Cloning** | RoboMimic | [amandlek/robomimic](https://huggingface.co/datasets/amandlek/robomimic) | Simulated manipulation (lift, can, square, transport) |
 | **Stage 3: Behavioral Cloning** | DROID | [cadene/droid](https://huggingface.co/datasets/cadene/droid) | 76K trajectories, real robot manipulation |
 | **Stage 3: Behavioral Cloning** | BridgeData V2 | [IPEC-COMMUNITY/bridge_orig_lerobot](https://huggingface.co/datasets/IPEC-COMMUNITY/bridge_orig_lerobot) | 60K trajectories, kitchen manipulation |
-| **Stage 4: Policy Improvement (DAgger)** | Online collection | Varies | Expert corrections during rollouts |
-| **Stage 4: Policy Improvement (GAIL)** | Expert demonstrations | Varies | Human demonstrations for adversarial imitation |
+| **Stage 4a: Online RL** | MuJoCo/Isaac Gym | [mujoco.org](https://mujoco.org/) / [isaac-gym](https://developer.nvidia.com/isaac-gym) | Real-time simulation for PPO/SAC manipulation training |
+| **Stage 4a: Online RL (DAgger)** | Online collection | Varies | Expert corrections during policy rollouts |
+| **Stage 4a: Online RL (GAIL)** | Expert demonstrations | Varies | Human demonstrations for adversarial imitation |
+| **Stage 4b: Offline RL** | D4RL | [imone/D4RL](https://huggingface.co/datasets/imone/D4RL) | Offline manipulation trajectories for CQL/IQL training |
+| **Stage 4b: Offline RL** | RoboMimic | [amandlek/robomimic](https://huggingface.co/datasets/amandlek/robomimic) | Suboptimal demonstrations for Decision Transformer |
 | **Stage 5: Multi-Task Training** | LIBERO | [HuggingFaceVLA/libero](https://huggingface.co/datasets/HuggingFaceVLA/libero) | 130 tasks, language-conditioned |
 
 ---

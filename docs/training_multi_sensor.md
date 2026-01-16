@@ -2438,12 +2438,27 @@ This guide covered the complete training pipeline for multi-sensor VLA:
 | **Stage 1: Depth Pretraining** | NYU Depth v2 | [sayakpaul/nyu_depth_v2](https://huggingface.co/datasets/sayakpaul/nyu_depth_v2) | Indoor RGB-D with 464 scenes |
 | **Stage 1: Depth Pretraining** | ScanNet | [yuchen0187/scannet](https://huggingface.co/datasets/yuchen0187/scannet) | 3D indoor scene reconstruction (776MB) |
 | **Stage 1: Depth Pretraining** | Matterport3D | [matterport.com/research](https://matterport.com/partners/research) | Large-scale indoor RGB-D |
-| **Stage 2: Cross-Modal Alignment** | Paired RGB-D data | Varies | Contrastive learning between modalities |
-| **Stage 3: Fusion Training** | Multi-sensor robot datasets | Varies | Action supervision with all sensors |
-| **Stage 4: Driving Fine-tuning** | nuScenes | [OpenDriveLab/DriveLM](https://huggingface.co/datasets/OpenDriveLab/DriveLM) | 1000 scenes, 6 cameras + LiDAR + Radar |
-| **Stage 4: Driving Fine-tuning** | KITTI | [kitti-dataset.com](https://www.cvlibs.net/datasets/kitti/) | Stereo vision, LiDAR, GPS |
-| **Stage 4: Driving Fine-tuning** | Waymo Open Dataset | [waymo.com/open](https://waymo.com/open/download) | Large-scale driving with LiDAR and cameras |
-| **Stage 4: Manipulation Fine-tuning** | GraspNet-1Billion | [graspnet.net](https://graspnet.net/) | 88 objects, 190 scenes, 1.1B grasps |
+| **Stage 1: LiDAR Pretraining** | KITTI LiDAR | [cvlibs.net/datasets/kitti](https://www.cvlibs.net/datasets/kitti/) | 22 sequences outdoor driving LiDAR |
+| **Stage 1: LiDAR Pretraining** | nuScenes LiDAR | [nuscenes.org](https://www.nuscenes.org/) | 1000 scenes, 34,720 points per sweep |
+| **Stage 1: LiDAR Pretraining** | Waymo Open LiDAR | [waymo.com/open](https://waymo.com/open/download) | 1150 scenes, top + side LiDAR |
+| **Stage 1: LiDAR Pretraining** | SemanticKITTI | [semantic-kitti.org](http://www.semantic-kitti.org/) | 28 sequences with semantic labels |
+| **Stage 1: Radar Pretraining** | nuScenes Radar | [nuscenes.org](https://www.nuscenes.org/) | 5 radar sensors, range-doppler data |
+| **Stage 1: Radar Pretraining** | RadarScenes | [radar-scenes.com](https://radar-scenes.com/) | 4 hours radar point clouds, 7500 frames |
+| **Stage 1: Radar Pretraining** | RADIal | [github.com/valeoai/RADIal](https://github.com/valeoai/RADIal) | Camera + radar + LiDAR for detection |
+| **Stage 1: IMU Pretraining** | EuRoC MAV | [projects.asl.ethz.ch/datasets](https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets) | IMU + stereo for visual-inertial odometry |
+| **Stage 1: IMU Pretraining** | TUM-VI | [vision.in.tum.de/data/datasets](https://vision.in.tum.de/data/datasets/visual-inertial-dataset) | Visual-inertial with ground truth |
+| **Stage 1: IMU Pretraining** | Oxford Inertial Odometry | [ori.ox.ac.uk](http://ori.ox.ac.uk/datasets/oxford-inertial-odometry-dataset) | IMU data for odometry estimation |
+| **Stage 1: Tactile Pretraining** | YCB-Slide | [ycb-slide.org](https://www.mmintlab.com/ycb-slide/) | Tactile sliding data for manipulation |
+| **Stage 1: Tactile Pretraining** | DIGIT Tactile | [github.com/facebookresearch/digit-design](https://github.com/facebookresearch/digit-design) | High-resolution tactile sensor data |
+| **Stage 1: Tactile Pretraining** | Touch and Go | [touch-and-go.github.io](https://touch-and-go.github.io/) | Vision + tactile for manipulation |
+| **Stage 2: Cross-Modal Alignment** | SUN RGB-D | [rgbd.cs.princeton.edu](https://rgbd.cs.princeton.edu/) | 10K RGB-D images for cross-modal contrastive learning |
+| **Stage 3: Fusion Training** | nuScenes | [nuscenes.org](https://www.nuscenes.org/) | 1000 scenes with camera, LiDAR, radar, IMU for multi-sensor fusion |
+| **Stage 4a: Online RL (Driving)** | CARLA Simulator | [carla.org](https://carla.org/) | Real-time multi-sensor driving simulation for PPO/SAC |
+| **Stage 4a: Online RL (Manipulation)** | Isaac Gym/Isaac Sim | [developer.nvidia.com/isaac-gym](https://developer.nvidia.com/isaac-gym) | Multi-sensor manipulation for online policy learning |
+| **Stage 4b: Offline RL (Driving)** | nuScenes | [OpenDriveLab/DriveLM](https://huggingface.co/datasets/OpenDriveLab/DriveLM) | 1000 scenes for CQL/IQL training |
+| **Stage 4b: Offline RL (Driving)** | KITTI | [kitti-dataset.com](https://www.cvlibs.net/datasets/kitti/) | Stereo + LiDAR for Decision Transformer |
+| **Stage 4b: Offline RL (Driving)** | Waymo Open Dataset | [waymo.com/open](https://waymo.com/open/download) | Large-scale driving logs for offline policy optimization |
+| **Stage 4b: Offline RL (Manipulation)** | GraspNet-1Billion | [graspnet.net](https://graspnet.net/) | 88 objects, 190 scenes for offline manipulation RL |
 | **Stage 5: Robustness Training** | EuRoC MAV | [projects.asl.ethz.ch/datasets](https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets) | IMU + visual odometry |
 | **Stage 5: Robustness Training** | TUM-VI | [vision.in.tum.de/data/datasets](https://vision.in.tum.de/data/datasets/visual-inertial-dataset) | Visual-inertial dataset |
 

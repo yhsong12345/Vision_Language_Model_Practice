@@ -2609,7 +2609,10 @@ This guide covered the complete training pipeline for humanoid VLA:
 | **Stage 3: Locomotion Training** | D4RL MuJoCo | [imone/D4RL](https://huggingface.co/datasets/imone/D4RL) | Ant, Humanoid, HalfCheetah locomotion data |
 | **Stage 4: Manipulation Training** | Teleoperation demonstrations | Varies | VR/MoCap suit collected data |
 | **Stage 5: Whole-Body Control** | Loco-manipulation datasets | Varies | Combined locomotion and manipulation |
-| **Stage 6: Policy Improvement (AMP)** | Reference motion clips | [amass.is.tue.mpg.de](https://amass.is.tue.mpg.de/) | MoCap data for adversarial motion priors |
+| **Stage 6a: Online RL** | MuJoCo/Isaac Gym | [mujoco.org](https://mujoco.org/) / [isaac-gym](https://developer.nvidia.com/isaac-gym) | Real-time simulation for PPO/SAC humanoid policy learning |
+| **Stage 6a: Online RL (AMP)** | Reference motion clips | [amass.is.tue.mpg.de](https://amass.is.tue.mpg.de/) | MoCap data for adversarial motion priors in simulation |
+| **Stage 6b: Offline RL** | D4RL Humanoid | [imone/D4RL](https://huggingface.co/datasets/imone/D4RL) | Humanoid locomotion trajectories for CQL/IQL training |
+| **Stage 6b: Offline RL** | HumanoidBench | [humanoid-bench.github.io](https://humanoid-bench.github.io/) | Offline humanoid manipulation and locomotion data |
 | **Stage 7: HRI Training** | Human-robot interaction demonstrations | Varies | Handover and collaborative task data |
 
 ---

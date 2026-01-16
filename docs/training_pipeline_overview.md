@@ -667,8 +667,11 @@ python run.py list
 | **Stage 1b: Visual Instruction Tuning** | LLaVA-Instruct-150K | [liuhaotian/LLaVA-Instruct-150K](https://huggingface.co/datasets/liuhaotian/LLaVA-Instruct-150K) | 150K visual QA pairs for instruction tuning |
 | **Stage 2: Action Head Training** | LeRobot | [lerobot on HuggingFace](https://huggingface.co/lerobot) | 100K+ episodes for robot manipulation tasks |
 | **Stage 2: Action Head Training** | Open X-Embodiment | [jxu124/OpenX-Embodiment](https://huggingface.co/datasets/jxu124/OpenX-Embodiment) | 1M+ episodes, 22+ robot types (1.13TB) |
-| **Stage 3: Offline RL** | D4RL | [imone/D4RL](https://huggingface.co/datasets/imone/D4RL) | 12 standardized offline RL benchmark tasks |
-| **Stage 3: Model-Based RL** | Robot trajectory data | Varies | Environment-specific trajectory datasets for world model training |
+| **Stage 3a: Online RL** | MuJoCo/Isaac Gym | [mujoco.org](https://mujoco.org/) / [isaac-gym](https://developer.nvidia.com/isaac-gym) | Real-time simulation interaction for PPO/SAC training |
+| **Stage 3a: Online RL** | CARLA Simulator | [carla.org](https://carla.org/) | Driving simulation for online policy learning |
+| **Stage 3b: Offline RL** | D4RL | [imone/D4RL](https://huggingface.co/datasets/imone/D4RL) | 12 standardized offline RL benchmark tasks for CQL/IQL training |
+| **Stage 3b: Offline RL** | Visual D4RL (VD4RL) | [conglu/vd4rl](https://huggingface.co/datasets/conglu/vd4rl) | Pixel-based offline RL for Decision Transformer |
+| **Stage 3b: Offline RL** | Robot trajectory data | Varies | Environment-specific trajectory datasets for world model training |
 
 ---
 

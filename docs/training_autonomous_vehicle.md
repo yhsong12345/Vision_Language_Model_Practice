@@ -2632,7 +2632,11 @@ This guide covered the complete training pipeline for autonomous driving VLA:
 | **Stage 3: Trajectory Prediction** | nuScenes | [KevinNotSmile/nuscenes-qa-mini](https://huggingface.co/datasets/KevinNotSmile/nuscenes-qa-mini) | 6-second trajectory prediction |
 | **Stage 3: Control Training** | CARLA Autopilot | [immanuelpeter/carla-autopilot-multimodal-dataset](https://huggingface.co/datasets/immanuelpeter/carla-autopilot-multimodal-dataset) | RGB, LiDAR, segmentation, control signals |
 | **Stage 3: Control Training** | PDM-Lite CARLA | [autonomousvision/PDM_Lite_Carla_LB2](https://huggingface.co/datasets/autonomousvision/PDM_Lite_Carla_LB2) | CARLA Leaderboard 2.0 expert data |
-| **Stage 4: Policy Improvement** | CARLA IPL | [isp-uv-es/IPL-CARLA-dataset](https://huggingface.co/datasets/isp-uv-es/IPL-CARLA-dataset) | 20K images with semantic segmentation |
+| **Stage 4a: Online RL** | CARLA Simulator | [carla.org](https://carla.org/) | Real-time interaction with CARLA environment for PPO/SAC training |
+| **Stage 4a: Online RL** | NVIDIA Isaac Sim | [developer.nvidia.com/isaac-sim](https://developer.nvidia.com/isaac-sim) | High-fidelity simulation for online policy learning |
+| **Stage 4b: Offline RL** | CARLA IPL | [isp-uv-es/IPL-CARLA-dataset](https://huggingface.co/datasets/isp-uv-es/IPL-CARLA-dataset) | 20K images with semantic segmentation for CQL/IQL training |
+| **Stage 4b: Offline RL** | nuPlan | [motional.com/nuplan](https://www.nuscenes.org/nuplan) | 1500 hours of real driving logs for offline policy optimization |
+| **Stage 4b: Offline RL** | Lyft Level 5 | [woven-planet/l5kit](https://github.com/woven-planet/l5kit) | 1000+ hours of driving data for Decision Transformer training |
 | **Stage 5: Safety Training** | CARLA Segmentation | [nightmare-nectarine/segmentation-carla-driving](https://huggingface.co/datasets/nightmare-nectarine/segmentation-carla-driving) | 80 episodes for imitation learning |
 | **Stage 6: Simulation Training** | NVIDIA PhysicalAI-AV | [nvidia/PhysicalAI-Autonomous-Vehicles](https://huggingface.co/datasets/nvidia/PhysicalAI-Autonomous-Vehicles) | Autonomous vehicle simulation data |
 | **Stage 7: Domain Adaptation** | Real driving logs | Varies | Fine-tuning for deployment |
