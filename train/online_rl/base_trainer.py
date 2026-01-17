@@ -14,6 +14,7 @@ import numpy as np
 from collections import deque
 
 from train.utils.buffers import RolloutBuffer, ReplayBuffer
+from core.device_utils import get_device
 
 
 class OnlineRLTrainer(ABC):
@@ -51,12 +52,8 @@ class OnlineRLTrainer(ABC):
         self.log_freq = log_freq
         self.save_freq = save_freq
 
-        # Set device
-        if device == "auto":
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        else:
-            self.device = torch.device(device)
-
+        # Set device using shared utility
+        self.device = get_device(device)
         self.policy = self.policy.to(self.device)
 
         # Set seeds

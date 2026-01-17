@@ -266,14 +266,12 @@ class OfflineRLTrainer(ABC):
         policy: nn.Module,
         device: str = "auto",
     ):
+        from core.device_utils import get_device
+
         self.config = config
 
-        # Set device
-        if device == "auto":
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        else:
-            self.device = torch.device(device)
-
+        # Set device using shared utility
+        self.device = get_device(device)
         self.policy = policy.to(self.device)
 
         # Set seeds

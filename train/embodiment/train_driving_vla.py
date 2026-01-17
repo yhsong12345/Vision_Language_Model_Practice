@@ -19,12 +19,10 @@ from tqdm import tqdm
 import argparse
 
 # Local imports
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 from model.embodiment.autonomous_vehicle import DrivingVLA, DrivingVLAConfig
 from model.safety.safety_shield import SafetyShield, SafetyConfig
 from model.safety.rule_checker import TrafficRuleChecker
+from core.device_utils import get_device
 
 
 @dataclass
@@ -143,7 +141,7 @@ class DrivingVLATrainer:
 
     def __init__(self, config: DrivingTrainConfig):
         self.config = config
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = get_device("auto")
 
         # Initialize model
         model_config = DrivingVLAConfig(

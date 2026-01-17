@@ -9,116 +9,15 @@ Implements IQL algorithm for offline reinforcement learning:
 
 import os
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 import numpy as np
 from tqdm import tqdm
 import copy
 
 from .base_trainer import OfflineRLTrainer, OfflineRLConfig, OfflineReplayBuffer
-
-
-class ValueNetwork(nn.Module):
-    """State value function V(s)."""
-
-    def __init__(self, obs_dim: int, hidden_dim: int = 256):
-        super().__init__()
-
-        self.network = nn.Sequential(
-            nn.Linear(obs_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-    def forward(self, obs: torch.Tensor) -> torch.Tensor:
-        return self.network(obs)
-
-
-class QNetwork(nn.Module):
-    """Q-function Q(s, a)."""
-
-    def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int = 256):
-        super().__init__()
-
-        self.network = nn.Sequential(
-            nn.Linear(obs_dim + action_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-    def forward(self, obs: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
-        x = torch.cat([obs, action], dim=-1)
-        return self.network(x)
-
-
-class TwinQNetwork(nn.Module):
-    """Twin Q-networks."""
-
-    def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int = 256):
-        super().__init__()
-
-        self.q1 = QNetwork(obs_dim, action_dim, hidden_dim)
-        self.q2 = QNetwork(obs_dim, action_dim, hidden_dim)
-
-    def forward(self, obs: torch.Tensor, action: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.q1(obs, action), self.q2(obs, action)
-
-    def min_q(self, obs: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
-        q1, q2 = self.forward(obs, action)
-        return torch.min(q1, q2)
-
-
-class GaussianPolicy(nn.Module):
-    """Gaussian policy for IQL."""
-
-    LOG_STD_MIN = -5
-    LOG_STD_MAX = 2
-
-    def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int = 256):
-        super().__init__()
-
-        self.network = nn.Sequential(
-            nn.Linear(obs_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-        )
-
-        self.mean_head = nn.Linear(hidden_dim, action_dim)
-        self.log_std_head = nn.Linear(hidden_dim, action_dim)
-
-    def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        features = self.network(obs)
-        mean = self.mean_head(features)
-        log_std = self.log_std_head(features)
-        log_std = torch.clamp(log_std, self.LOG_STD_MIN, self.LOG_STD_MAX)
-        return mean, log_std
-
-    def log_prob(self, obs: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
-        mean, log_std = self.forward(obs)
-        std = log_std.exp()
-        normal = torch.distributions.Normal(mean, std)
-        return normal.log_prob(action).sum(-1, keepdim=True)
-
-    def sample(self, obs: torch.Tensor) -> torch.Tensor:
-        mean, log_std = self.forward(obs)
-        std = log_std.exp()
-        normal = torch.distributions.Normal(mean, std)
-        return normal.rsample()
-
-    def get_action(self, obs: torch.Tensor, deterministic: bool = False) -> torch.Tensor:
-        mean, log_std = self.forward(obs)
-        if deterministic:
-            return mean
-        std = log_std.exp()
-        normal = torch.distributions.Normal(mean, std)
-        return normal.sample()
+from train.utils.rl_networks import GaussianPolicy, TwinQNetwork, ValueNetwork
 
 
 class IQLTrainer(OfflineRLTrainer):

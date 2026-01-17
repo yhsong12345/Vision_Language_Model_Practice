@@ -6,6 +6,7 @@ This folder contains comprehensive documentation for training Vision-Language-Ac
 
 | Document | Description |
 |----------|-------------|
+| [embodiment.md](embodiment.md) | **Embodiment Documentation** - DrivingVLA architecture, BEV encoding, trajectory prediction |
 | [training_vla_recipe.md](training_vla_recipe.md) | **Complete VLA Training Pipeline** - End-to-end training from VLM pretraining to deployment |
 | [training_datasets.md](training_datasets.md) | **Dataset Documentation** - All datasets used in training with sources and formats |
 | [training_sensors.md](training_sensors.md) | **Sensor Training** - Camera, LiDAR, radar, IMU processing and sensor fusion |
@@ -13,6 +14,7 @@ This folder contains comprehensive documentation for training Vision-Language-Ac
 | [training_temporal_module.md](training_temporal_module.md) | **Temporal Module** - Temporal encoders, history encoding, memory buffers |
 | [training_imitation_learning.md](training_imitation_learning.md) | **Imitation Learning** - BC, DAgger, GAIL methods |
 | [training_reinforcement_learning.md](training_reinforcement_learning.md) | **Reinforcement Learning** - Offline (IQL, CQL, TD3+BC, DT) and Online (PPO, SAC, GRPO) RL |
+| [training_online_rl_carla.md](training_online_rl_carla.md) | **Online RL with CARLA** - Docker setup, simulator configuration, PPO/SAC training |
 | [deployment.md](deployment.md) | **Deployment & Export** - ONNX, TorchScript, OpenVINO, Triton, quantization |
 
 ## Training Pipeline Overview

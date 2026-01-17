@@ -3,10 +3,10 @@ Training Utilities
 
 Shared utilities for VLA training:
 - buffers: Replay and rollout buffers for RL
-- policies: Common policy network architectures
+- policies: Common policy network architectures (for IL)
+- rl_networks: Shared RL network components (GaussianPolicy, TwinQNetwork, ValueNetwork)
 - evaluation: Standardized evaluation functions
 - logging: Training metrics and checkpointing
-- device_utils: Device management utilities
 - sim2real: Sim-to-real transfer utilities
 """
 
@@ -21,6 +21,14 @@ from .policies import (
     MLPPolicy,
     GaussianMLPPolicy,
     ActorCritic,
+)
+
+from .rl_networks import (
+    GaussianPolicy,
+    QNetwork,
+    TwinQNetwork,
+    ValueNetwork,
+    DeterministicPolicy,
 )
 
 from .evaluation import (
@@ -38,7 +46,7 @@ from .logging import (
     create_experiment_logger,
 )
 
-from .device_utils import (
+from core.device_utils import (
     get_device,
     move_to_device,
 )
@@ -59,10 +67,16 @@ __all__ = [
     "RolloutBuffer",
     "ReplayBuffer",
     "OfflineBuffer",
-    # Policies
+    # Policies (IL)
     "MLPPolicy",
     "GaussianMLPPolicy",
     "ActorCritic",
+    # RL Networks
+    "GaussianPolicy",
+    "QNetwork",
+    "TwinQNetwork",
+    "ValueNetwork",
+    "DeterministicPolicy",
     # Evaluation
     "evaluate_policy",
     "evaluate_in_env",

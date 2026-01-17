@@ -9,67 +9,15 @@ Implements TD3+BC algorithm for offline reinforcement learning:
 
 import os
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 import numpy as np
 from tqdm import tqdm
 import copy
 
 from .base_trainer import OfflineRLTrainer, OfflineRLConfig, OfflineReplayBuffer
-
-
-class DeterministicPolicy(nn.Module):
-    """Deterministic policy for TD3."""
-
-    def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int = 256, max_action: float = 1.0):
-        super().__init__()
-
-        self.network = nn.Sequential(
-            nn.Linear(obs_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, action_dim),
-            nn.Tanh(),
-        )
-
-        self.max_action = max_action
-
-    def forward(self, obs: torch.Tensor) -> torch.Tensor:
-        return self.network(obs) * self.max_action
-
-
-class TwinQNetwork(nn.Module):
-    """Twin Q-networks for TD3."""
-
-    def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int = 256):
-        super().__init__()
-
-        self.q1 = nn.Sequential(
-            nn.Linear(obs_dim + action_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-        self.q2 = nn.Sequential(
-            nn.Linear(obs_dim + action_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-    def forward(self, obs: torch.Tensor, action: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        x = torch.cat([obs, action], dim=-1)
-        return self.q1(x), self.q2(x)
-
-    def q1_forward(self, obs: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
-        x = torch.cat([obs, action], dim=-1)
-        return self.q1(x)
+from train.utils.rl_networks import DeterministicPolicy, TwinQNetwork
 
 
 class TD3BCTrainer(OfflineRLTrainer):

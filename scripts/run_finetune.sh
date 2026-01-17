@@ -1,8 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=vla_finetune
-#SBATCH --comment="VLA supervised fine-tuning on robot data"
-#SBATCH --nodelist=cubox01,cubox02,cubox03,cubox04,cubox06,cubox07,cubox10,cubox11
+#SBATCH --comment="VLA finetuning on robot manipulation data"
+#SBATCH --nodelist=hopper
 #SBATCH --gres=gpu:8
+#SBATCH --nodes=2
 #SBATCH --cpus-per-task=96
 #SBATCH --mem-per-cpu=8G
 

@@ -9,11 +9,13 @@ Main class for Vision-Language Model pretraining following LLaVA paradigm:
 import json
 import os
 import sys
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import wandb
 from accelerate import Accelerator
 from torch.optim import AdamW
@@ -123,6 +125,12 @@ class VLMPretrainer:
         # Move model to device
         self.model = self.accelerator.prepare(self.model)
 
+        # Tracking state for metrics
+        self.total_tokens_seen = 0
+        self.total_vision_tokens_seen = 0
+        self.total_text_tokens_seen = 0
+        self.training_start_time = None
+
         # Initialize logging
         if config.use_wandb and self.accelerator.is_main_process:
             wandb.init(
@@ -161,6 +169,20 @@ class VLMPretrainer:
             pin_memory=True,
         )
 
+        # Create validation dataloader if provided
+        val_loader = None
+        if val_dataset is not None:
+            val_loader = DataLoader(
+                val_dataset,
+                batch_size=self.config.batch_size,
+                shuffle=False,
+                num_workers=(
+                    self.config.num_workers if hasattr(self.config, "num_workers") else 4
+                ),
+                pin_memory=True,
+            )
+            val_loader = self.accelerator.prepare(val_loader)
+
         # Optimizer (only projector parameters)
         projector_params = [
             p for p in self.model.vision_projector.parameters() if p.requires_grad
@@ -189,9 +211,15 @@ class VLMPretrainer:
         # Training loop
         self.model.train()
         global_step = 0
+        best_val_loss = float("inf")
+        self.training_start_time = time.time()
+        step_start_time = time.time()
 
         for epoch in range(self.config.alignment_epochs):
             epoch_loss = 0
+            epoch_alignment_score = 0
+            epoch_perplexity = 0
+            self.model.train()
             progress_bar = tqdm(
                 train_loader,
                 desc=f"Epoch {epoch + 1}/{self.config.alignment_epochs}",
@@ -207,8 +235,10 @@ class VLMPretrainer:
                     # Backward pass
                     self.accelerator.backward(loss)
 
+                    # Calculate gradient norm before clipping
+                    grad_norm = None
                     if self.accelerator.sync_gradients:
-                        self.accelerator.clip_grad_norm_(
+                        grad_norm = self.accelerator.clip_grad_norm_(
                             projector_params,
                             self.config.max_grad_norm,
                         )
@@ -218,25 +248,80 @@ class VLMPretrainer:
                     optimizer.zero_grad()
 
                 epoch_loss += loss.item()
+                epoch_alignment_score += outputs.get("alignment_score", 0)
+                epoch_perplexity += outputs.get("perplexity", 0)
                 global_step += 1
+
+                # Update token counts
+                self.total_vision_tokens_seen += outputs.get("num_vision_tokens", 0)
+                self.total_text_tokens_seen += outputs.get("num_text_tokens", 0)
+                self.total_tokens_seen = self.total_vision_tokens_seen + self.total_text_tokens_seen
 
                 # Logging
                 if global_step % self.config.logging_steps == 0:
-                    if self.config.use_wandb and self.accelerator.is_main_process:
-                        wandb.log(
-                            {
-                                "stage1/loss": loss.item(),
-                                "stage1/lr": scheduler.get_last_lr()[0],
-                                "stage1/step": global_step,
-                            }
-                        )
+                    step_time = time.time() - step_start_time
+                    tokens_per_step = outputs.get("num_vision_tokens", 0) + outputs.get("num_text_tokens", 0)
+                    tokens_per_sec = (tokens_per_step * self.config.logging_steps) / step_time if step_time > 0 else 0
 
-                progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
+                    if self.config.use_wandb and self.accelerator.is_main_process:
+                        log_dict = {
+                            # Core losses
+                            "stage1/loss": loss.item(),
+                            "stage1/perplexity": outputs.get("perplexity", 0),
+
+                            # Vision-Language Alignment (Critical for VLA)
+                            "stage1/alignment_score": outputs.get("alignment_score", 0),
+                            "stage1/vision_embed_norm": outputs.get("vision_embed_norm", 0),
+                            "stage1/vision_embed_std": outputs.get("vision_embed_std", 0),
+                            "stage1/text_embed_norm": outputs.get("text_embed_norm", 0),
+                            "stage1/text_embed_std": outputs.get("text_embed_std", 0),
+
+                            # Training dynamics
+                            "stage1/lr": scheduler.get_last_lr()[0],
+                            "stage1/grad_norm": grad_norm.item() if grad_norm is not None else 0,
+                            "stage1/step": global_step,
+                            "stage1/epoch": epoch + 1,
+
+                            # Throughput metrics
+                            "stage1/tokens_per_sec": tokens_per_sec,
+                            "stage1/total_tokens": self.total_tokens_seen,
+                            "stage1/vision_tokens": self.total_vision_tokens_seen,
+                            "stage1/text_tokens": self.total_text_tokens_seen,
+                            "stage1/samples_seen": global_step * self.config.batch_size,
+                        }
+                        wandb.log(log_dict)
+
+                    step_start_time = time.time()
+
+                progress_bar.set_postfix({
+                    "loss": f"{loss.item():.4f}",
+                    "align": f"{outputs.get('alignment_score', 0):.3f}"
+                })
 
             # Epoch summary
             avg_loss = epoch_loss / len(train_loader)
+            avg_alignment = epoch_alignment_score / len(train_loader)
+            avg_perplexity = epoch_perplexity / len(train_loader)
+
             if self.accelerator.is_main_process:
-                print(f"Epoch {epoch + 1} - Average Loss: {avg_loss:.4f}")
+                print(f"Epoch {epoch + 1} - Avg Loss: {avg_loss:.4f}, Avg Alignment: {avg_alignment:.4f}, Avg PPL: {avg_perplexity:.2f}")
+
+                if self.config.use_wandb:
+                    wandb.log({
+                        "stage1/epoch_loss": avg_loss,
+                        "stage1/epoch_alignment_score": avg_alignment,
+                        "stage1/epoch_perplexity": avg_perplexity,
+                        "stage1/epoch": epoch + 1,
+                    })
+
+            # Validation
+            if val_loader is not None:
+                val_metrics = self._validate(val_loader, stage="stage1")
+                if self.accelerator.is_main_process:
+                    print(f"Epoch {epoch + 1} - Val Loss: {val_metrics['loss']:.4f}, Val Alignment: {val_metrics.get('alignment_score', 0):.4f}")
+                    if val_metrics["loss"] < best_val_loss:
+                        best_val_loss = val_metrics["loss"]
+                        self._save_checkpoint("stage1_best")
 
         # Save stage 1 checkpoint
         self._save_checkpoint("stage1_alignment")
@@ -270,6 +355,20 @@ class VLMPretrainer:
             pin_memory=True,
         )
 
+        # Create validation dataloader if provided
+        val_loader = None
+        if val_dataset is not None:
+            val_loader = DataLoader(
+                val_dataset,
+                batch_size=self.config.batch_size,
+                shuffle=False,
+                num_workers=(
+                    self.config.num_workers if hasattr(self.config, "num_workers") else 4
+                ),
+                pin_memory=True,
+            )
+            val_loader = self.accelerator.prepare(val_loader)
+
         # Optimizer (projector + LLM parameters)
         trainable_params = [p for p in self.model.parameters() if p.requires_grad]
         optimizer = AdamW(
@@ -296,10 +395,14 @@ class VLMPretrainer:
         # Training loop
         self.model.train()
         global_step = 0
-        best_loss = float("inf")
+        best_val_loss = float("inf")
+        step_start_time = time.time()
 
         for epoch in range(self.config.instruction_epochs):
             epoch_loss = 0
+            epoch_alignment_score = 0
+            epoch_perplexity = 0
+            self.model.train()
             progress_bar = tqdm(
                 train_loader,
                 desc=f"Epoch {epoch + 1}/{self.config.instruction_epochs}",
@@ -315,8 +418,10 @@ class VLMPretrainer:
                     # Backward pass
                     self.accelerator.backward(loss)
 
+                    # Calculate gradient norm before clipping
+                    grad_norm = None
                     if self.accelerator.sync_gradients:
-                        self.accelerator.clip_grad_norm_(
+                        grad_norm = self.accelerator.clip_grad_norm_(
                             trainable_params,
                             self.config.max_grad_norm,
                         )
@@ -326,32 +431,88 @@ class VLMPretrainer:
                     optimizer.zero_grad()
 
                 epoch_loss += loss.item()
+                epoch_alignment_score += outputs.get("alignment_score", 0)
+                epoch_perplexity += outputs.get("perplexity", 0)
                 global_step += 1
+
+                # Update token counts
+                self.total_vision_tokens_seen += outputs.get("num_vision_tokens", 0)
+                self.total_text_tokens_seen += outputs.get("num_text_tokens", 0)
+                self.total_tokens_seen = self.total_vision_tokens_seen + self.total_text_tokens_seen
 
                 # Logging
                 if global_step % self.config.logging_steps == 0:
+                    step_time = time.time() - step_start_time
+                    tokens_per_step = outputs.get("num_vision_tokens", 0) + outputs.get("num_text_tokens", 0)
+                    tokens_per_sec = (tokens_per_step * self.config.logging_steps) / step_time if step_time > 0 else 0
+
                     if self.config.use_wandb and self.accelerator.is_main_process:
-                        wandb.log(
-                            {
-                                "stage2/loss": loss.item(),
-                                "stage2/lr": scheduler.get_last_lr()[0],
-                                "stage2/step": global_step,
-                            }
-                        )
+                        log_dict = {
+                            # Core losses
+                            "stage2/loss": loss.item(),
+                            "stage2/perplexity": outputs.get("perplexity", 0),
+
+                            # Vision-Language Alignment (Critical for VLA)
+                            "stage2/alignment_score": outputs.get("alignment_score", 0),
+                            "stage2/vision_embed_norm": outputs.get("vision_embed_norm", 0),
+                            "stage2/vision_embed_std": outputs.get("vision_embed_std", 0),
+                            "stage2/text_embed_norm": outputs.get("text_embed_norm", 0),
+                            "stage2/text_embed_std": outputs.get("text_embed_std", 0),
+
+                            # Training dynamics
+                            "stage2/lr": scheduler.get_last_lr()[0],
+                            "stage2/grad_norm": grad_norm.item() if grad_norm is not None else 0,
+                            "stage2/step": global_step,
+                            "stage2/epoch": epoch + 1,
+
+                            # Throughput metrics
+                            "stage2/tokens_per_sec": tokens_per_sec,
+                            "stage2/total_tokens": self.total_tokens_seen,
+                            "stage2/vision_tokens": self.total_vision_tokens_seen,
+                            "stage2/text_tokens": self.total_text_tokens_seen,
+                            "stage2/samples_seen": global_step * self.config.batch_size,
+                        }
+                        wandb.log(log_dict)
+
+                    step_start_time = time.time()
 
                 # Save checkpoint
                 if global_step % self.config.save_steps == 0:
                     self._save_checkpoint(f"stage2_step_{global_step}")
 
-                progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
+                progress_bar.set_postfix({
+                    "loss": f"{loss.item():.4f}",
+                    "ppl": f"{outputs.get('perplexity', 0):.2f}"
+                })
 
             # Epoch summary
             avg_loss = epoch_loss / len(train_loader)
-            if self.accelerator.is_main_process:
-                print(f"Epoch {epoch + 1} - Average Loss: {avg_loss:.4f}")
+            avg_alignment = epoch_alignment_score / len(train_loader)
+            avg_perplexity = epoch_perplexity / len(train_loader)
 
-                if avg_loss < best_loss:
-                    best_loss = avg_loss
+            if self.accelerator.is_main_process:
+                print(f"Epoch {epoch + 1} - Avg Loss: {avg_loss:.4f}, Avg Alignment: {avg_alignment:.4f}, Avg PPL: {avg_perplexity:.2f}")
+
+                if self.config.use_wandb:
+                    wandb.log({
+                        "stage2/epoch_loss": avg_loss,
+                        "stage2/epoch_alignment_score": avg_alignment,
+                        "stage2/epoch_perplexity": avg_perplexity,
+                        "stage2/epoch": epoch + 1,
+                    })
+
+            # Validation
+            if val_loader is not None:
+                val_metrics = self._validate(val_loader, stage="stage2")
+                if self.accelerator.is_main_process:
+                    print(f"Epoch {epoch + 1} - Val Loss: {val_metrics['loss']:.4f}, Val PPL: {val_metrics.get('perplexity', 0):.2f}")
+                    if val_metrics["loss"] < best_val_loss:
+                        best_val_loss = val_metrics["loss"]
+                        self._save_checkpoint("stage2_best")
+            else:
+                # If no validation, use training loss for best model selection
+                if self.accelerator.is_main_process and avg_loss < best_val_loss:
+                    best_val_loss = avg_loss
                     self._save_checkpoint("stage2_best")
 
         # Save final checkpoint
@@ -401,9 +562,40 @@ class VLMPretrainer:
             inputs_embeds=combined_embeds,
             attention_mask=combined_mask,
             labels=combined_labels,
+            output_hidden_states=True,
         )
 
-        return {"loss": outputs.loss}
+        # Calculate detailed metrics for VLA
+        result = {
+            "loss": outputs.loss,
+            "batch_size": batch_size,
+            "num_vision_tokens": num_vision_tokens * batch_size,
+            "num_text_tokens": int(attention_mask.sum().item()),
+            "vision_embeds": vision_embeds,
+            "text_embeds": text_embeds,
+        }
+
+        # Calculate perplexity (important for language modeling quality)
+        result["perplexity"] = torch.exp(outputs.loss).item()
+
+        # Vision-text alignment score (cosine similarity between pooled embeddings)
+        with torch.no_grad():
+            vision_pooled = vision_embeds.mean(dim=1)  # [B, D]
+            text_pooled = text_embeds.mean(dim=1)  # [B, D]
+            vision_pooled = F.normalize(vision_pooled, dim=-1)
+            text_pooled = F.normalize(text_pooled, dim=-1)
+            alignment_score = (vision_pooled * text_pooled).sum(dim=-1).mean()
+            result["alignment_score"] = alignment_score.item()
+
+            # Vision embedding statistics
+            result["vision_embed_norm"] = vision_embeds.norm(dim=-1).mean().item()
+            result["vision_embed_std"] = vision_embeds.std().item()
+
+            # Text embedding statistics
+            result["text_embed_norm"] = text_embeds.norm(dim=-1).mean().item()
+            result["text_embed_std"] = text_embeds.std().item()
+
+        return result
 
     def _instruction_forward(
         self, batch: Dict[str, torch.Tensor]
@@ -411,6 +603,75 @@ class VLMPretrainer:
         """Forward pass for instruction tuning."""
         # Same as alignment forward but with full model training
         return self._alignment_forward(batch)
+
+    @torch.no_grad()
+    def _validate(
+        self,
+        val_loader: DataLoader,
+        stage: str = "stage1",
+    ) -> Dict[str, float]:
+        """
+        Run validation and return comprehensive metrics.
+
+        Args:
+            val_loader: Validation data loader
+            stage: Current training stage ("stage1" or "stage2")
+
+        Returns:
+            Dictionary with validation metrics
+        """
+        self.model.eval()
+        total_loss = 0.0
+        total_perplexity = 0.0
+        total_alignment_score = 0.0
+        total_vision_embed_norm = 0.0
+        total_text_embed_norm = 0.0
+        num_batches = 0
+
+        progress_bar = tqdm(
+            val_loader,
+            desc="Validating",
+            disable=not self.accelerator.is_main_process,
+        )
+
+        for batch in progress_bar:
+            outputs = self._alignment_forward(batch)
+            loss = outputs["loss"]
+
+            # Gather loss across processes
+            gathered_loss = self.accelerator.gather(loss)
+            total_loss += gathered_loss.mean().item()
+            total_perplexity += outputs.get("perplexity", 0)
+            total_alignment_score += outputs.get("alignment_score", 0)
+            total_vision_embed_norm += outputs.get("vision_embed_norm", 0)
+            total_text_embed_norm += outputs.get("text_embed_norm", 0)
+            num_batches += 1
+
+            progress_bar.set_postfix({
+                "val_loss": f"{loss.item():.4f}",
+                "align": f"{outputs.get('alignment_score', 0):.3f}"
+            })
+
+        # Calculate averages
+        metrics = {
+            "loss": total_loss / num_batches if num_batches > 0 else 0.0,
+            "perplexity": total_perplexity / num_batches if num_batches > 0 else 0.0,
+            "alignment_score": total_alignment_score / num_batches if num_batches > 0 else 0.0,
+            "vision_embed_norm": total_vision_embed_norm / num_batches if num_batches > 0 else 0.0,
+            "text_embed_norm": total_text_embed_norm / num_batches if num_batches > 0 else 0.0,
+        }
+
+        # Log to wandb
+        if self.config.use_wandb and self.accelerator.is_main_process:
+            wandb.log({
+                f"{stage}/val_loss": metrics["loss"],
+                f"{stage}/val_perplexity": metrics["perplexity"],
+                f"{stage}/val_alignment_score": metrics["alignment_score"],
+                f"{stage}/val_vision_embed_norm": metrics["vision_embed_norm"],
+                f"{stage}/val_text_embed_norm": metrics["text_embed_norm"],
+            })
+
+        return metrics
 
     def _freeze_for_alignment(self):
         """Freeze model for Stage 1 (alignment)."""

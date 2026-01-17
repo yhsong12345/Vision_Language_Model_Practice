@@ -24,10 +24,6 @@ from transformers import (
 )
 from typing import Optional, Dict, Any, List
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 from model.vlm import VisionEncoder, VisionEncoderConfig, VisionProjector
 from model.sensor import PointCloudEncoder, RadarEncoder, IMUEncoder, DepthEncoder
 from model.fusion import SensorFusion

@@ -1,8 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=vla_humanoid
-#SBATCH --comment="VLA Humanoid Robot (Whole-Body Control + Locomotion)"
-#SBATCH --nodelist=cubox01,cubox02,cubox03,cubox04,cubox06,cubox07,cubox10,cubox11
+#SBATCH --comment="Humanoid VLA training (whole-body control)"
+#SBATCH --nodelist=hopper
 #SBATCH --gres=gpu:8
+#SBATCH --nodes=2
 #SBATCH --cpus-per-task=96
 #SBATCH --mem-per-cpu=8G
 
@@ -33,14 +34,10 @@ echo "$nodes"
 # Get the IP address of the head node
 head_node=${nodes_array[0]}
 head_node_ip=$(srun --nodes=1 --ntasks=1 -w "$head_node" hostname --ip-address)
-head_port=29508
+head_port=29500
 
 # NCCL network configuration (for Infiniband)
 export NCCL_SOCKET_IFNAME=eno1
-
-# Humanoid-specific environment variables
-export MUJOCO_GL=${MUJOCO_GL:-"egl"}
-export ISAAC_SIM_PATH=${ISAAC_SIM_PATH:-"/opt/isaac-sim"}
 
 echo "****Starting HEAD at $head_node, $head_node_ip:$head_port"
 

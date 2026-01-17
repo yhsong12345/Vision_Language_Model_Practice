@@ -20,11 +20,9 @@ from tqdm import tqdm
 import argparse
 
 # Local imports
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 from model.world_model.latent_world_model import LatentWorldModel, WorldModelConfig
 from model.world_model.reward_predictor import RewardPredictor, ValuePredictor
+from core.device_utils import get_device
 
 
 @dataclass
@@ -151,7 +149,7 @@ class WorldModelTrainer:
 
     def __init__(self, config: WorldModelTrainConfig):
         self.config = config
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = get_device("auto")
 
         # Initialize world model
         model_config = WorldModelConfig(

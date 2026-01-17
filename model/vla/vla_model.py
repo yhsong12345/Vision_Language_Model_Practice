@@ -18,10 +18,6 @@ from transformers import (
 )
 from typing import Optional, Dict, Any, List
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 from model.vlm import VisionEncoder, VisionEncoderConfig, AttentionPoolingProjector
 from model.action_head import MLPActionHead
 from model.utils import freeze_module, count_parameters, count_trainable_parameters

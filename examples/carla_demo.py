@@ -22,9 +22,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 import numpy as np
 import torch
 import torch.nn as nn

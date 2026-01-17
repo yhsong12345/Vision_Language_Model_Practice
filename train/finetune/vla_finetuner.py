@@ -6,25 +6,225 @@ Supports various fine-tuning strategies:
 - Projector + Action Head only
 - Full fine-tuning
 - LoRA fine-tuning
+
+Enhanced monitoring includes:
+- Gradient health (norm, clipping frequency)
+- Per-dimension action metrics
+- Action prediction statistics
+- Learning dynamics tracking
 """
 
 import os
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from transformers import get_cosine_schedule_with_warmup
 from accelerate import Accelerator
 from tqdm import tqdm
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+from collections import deque
 import json
 import wandb
+import numpy as np
 
 import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from config.training_config import FineTuningConfig
 from .dataset import RobotDataset, create_robot_dataloader
+
+
+class MetricsTracker:
+    """
+    Tracks and computes training metrics for VLA fine-tuning.
+
+    Monitors:
+    - Loss metrics (total, action, language)
+    - Gradient health (norm, clipping frequency)
+    - Per-dimension action accuracy
+    - Action prediction statistics
+    - Learning dynamics (smoothed losses, overfitting detection)
+    """
+
+    def __init__(self, action_dim: int, window_size: int = 100):
+        self.action_dim = action_dim
+        self.window_size = window_size
+
+        # Running windows for smoothed metrics
+        self.loss_window = deque(maxlen=window_size)
+        self.grad_norm_window = deque(maxlen=window_size)
+
+        # Gradient clipping stats
+        self.total_steps = 0
+        self.clipped_steps = 0
+
+        # Per-dimension tracking
+        self.dim_errors = [deque(maxlen=window_size) for _ in range(action_dim)]
+
+        # Action statistics
+        self.pred_actions = deque(maxlen=window_size * 32)  # Store more for statistics
+        self.gt_actions = deque(maxlen=window_size * 32)
+
+        # Validation tracking for overfitting detection
+        self.train_losses = []
+        self.val_losses = []
+
+    def update_loss(self, loss: float):
+        """Update loss tracking."""
+        self.loss_window.append(loss)
+
+    def update_gradient_stats(
+        self, model_parameters, max_grad_norm: float, was_clipped: bool = False
+    ) -> Dict[str, float]:
+        """
+        Compute and track gradient statistics.
+
+        Returns dict with gradient metrics.
+        """
+        self.total_steps += 1
+
+        # Compute gradient norm
+        total_norm = 0.0
+        for p in model_parameters:
+            if p.grad is not None:
+                param_norm = p.grad.data.norm(2)
+                total_norm += param_norm.item() ** 2
+        total_norm = total_norm**0.5
+
+        self.grad_norm_window.append(total_norm)
+
+        # Track clipping
+        if was_clipped or total_norm > max_grad_norm:
+            self.clipped_steps += 1
+
+        return {
+            "grad_norm": total_norm,
+            "grad_norm_avg": (
+                np.mean(self.grad_norm_window) if self.grad_norm_window else 0
+            ),
+            "grad_clip_ratio": self.clipped_steps / max(1, self.total_steps),
+        }
+
+    def update_action_metrics(
+        self, pred_actions: torch.Tensor, gt_actions: torch.Tensor
+    ) -> Dict[str, float]:
+        """
+        Compute per-dimension and overall action metrics.
+
+        Args:
+            pred_actions: Predicted actions [B, action_dim] or [B, chunk_size, action_dim]
+            gt_actions: Ground truth actions [B, action_dim] or [B, chunk_size, action_dim]
+
+        Returns dict with action metrics.
+        """
+        # Flatten if chunked
+        if pred_actions.dim() == 3:
+            pred_actions = pred_actions.reshape(-1, pred_actions.size(-1))
+            gt_actions = gt_actions.reshape(-1, gt_actions.size(-1))
+
+        pred_np = pred_actions.detach().cpu().numpy()
+        gt_np = gt_actions.detach().cpu().numpy()
+
+        # Store for statistics
+        for p, g in zip(pred_np, gt_np):
+            self.pred_actions.append(p)
+            self.gt_actions.append(g)
+
+        # Per-dimension MSE
+        dim_mse = {}
+        for d in range(min(self.action_dim, pred_actions.size(-1))):
+            dim_error = F.mse_loss(pred_actions[:, d], gt_actions[:, d]).item()
+            self.dim_errors[d].append(dim_error)
+            dim_mse[f"action_mse_dim_{d}"] = dim_error
+
+        # Overall metrics
+        mse = F.mse_loss(pred_actions, gt_actions).item()
+        mae = F.l1_loss(pred_actions, gt_actions).item()
+
+        # Action prediction statistics
+        pred_mean = pred_actions.mean().item()
+        pred_std = pred_actions.std().item()
+        gt_mean = gt_actions.mean().item()
+        gt_std = gt_actions.std().item()
+
+        metrics = {
+            "action_mse": mse,
+            "action_mae": mae,
+            "action_rmse": np.sqrt(mse),
+            "pred_action_mean": pred_mean,
+            "pred_action_std": pred_std,
+            "gt_action_mean": gt_mean,
+            "gt_action_std": gt_std,
+            "action_mean_diff": abs(pred_mean - gt_mean),
+            "action_std_ratio": pred_std / max(gt_std, 1e-6),
+            **dim_mse,
+        }
+
+        return metrics
+
+    def get_smoothed_loss(self) -> float:
+        """Get exponentially smoothed loss."""
+        if not self.loss_window:
+            return 0.0
+        return np.mean(self.loss_window)
+
+    def get_per_dim_summary(self) -> Dict[str, float]:
+        """Get summary of per-dimension errors."""
+        summary = {}
+        for d in range(self.action_dim):
+            if self.dim_errors[d]:
+                summary[f"action_mse_dim_{d}_avg"] = np.mean(self.dim_errors[d])
+        return summary
+
+    def check_overfitting(self, train_loss: float, val_loss: float) -> Dict[str, Any]:
+        """
+        Check for overfitting by comparing train/val loss trends.
+
+        Returns overfitting indicators.
+        """
+        self.train_losses.append(train_loss)
+        self.val_losses.append(val_loss)
+
+        gap = val_loss - train_loss
+        gap_ratio = gap / max(train_loss, 1e-6)
+
+        # Check if gap is increasing (sign of overfitting)
+        is_overfitting = False
+        gap_trend = 0.0
+
+        if len(self.val_losses) >= 3:
+            recent_gaps = [
+                self.val_losses[i] - self.train_losses[i] for i in range(-3, 0)
+            ]
+            gap_trend = recent_gaps[-1] - recent_gaps[0]
+            is_overfitting = gap_trend > 0 and gap_ratio > 0.1
+
+        return {
+            "train_val_gap": gap,
+            "train_val_gap_ratio": gap_ratio,
+            "gap_trend": gap_trend,
+            "is_overfitting": is_overfitting,
+        }
+
+    def get_action_distribution_stats(self) -> Dict[str, float]:
+        """Get action distribution statistics from accumulated predictions."""
+        if len(self.pred_actions) < 10:
+            return {}
+
+        pred_arr = np.array(list(self.pred_actions))
+        gt_arr = np.array(list(self.gt_actions))
+
+        stats = {}
+        for d in range(min(self.action_dim, pred_arr.shape[-1])):
+            stats[f"pred_dim_{d}_mean"] = pred_arr[:, d].mean()
+            stats[f"pred_dim_{d}_std"] = pred_arr[:, d].std()
+            stats[f"gt_dim_{d}_mean"] = gt_arr[:, d].mean()
+            stats[f"gt_dim_{d}_std"] = gt_arr[:, d].std()
+
+        return stats
 
 
 class VLAFineTuner:
@@ -57,13 +257,27 @@ class VLAFineTuner:
         # Setup model
         self._setup_model()
 
-        # Initialize wandb
+        # Initialize metrics tracker
+        action_dim = getattr(model, "action_dim", 7)
+        self.metrics_tracker = MetricsTracker(action_dim=action_dim)
+
+        # Initialize wandb with enhanced config
         if config.use_wandb and self.accelerator.is_main_process:
             wandb.init(
                 project=config.wandb_project,
                 name=config.experiment_name,
-                config=vars(config),
+                config={
+                    **vars(config),
+                    "action_dim": action_dim,
+                    "model_type": type(model).__name__,
+                },
             )
+            # Define custom wandb metrics for better visualization
+            wandb.define_metric("train/step")
+            wandb.define_metric("train/*", step_metric="train/step")
+            wandb.define_metric("val/*", step_metric="train/step")
+            wandb.define_metric("gradient/*", step_metric="train/step")
+            wandb.define_metric("action/*", step_metric="train/step")
 
     def _setup_model(self):
         """Setup model for fine-tuning based on config."""
@@ -208,7 +422,14 @@ class VLAFineTuner:
                     # Backward pass
                     self.accelerator.backward(loss)
 
+                    # Track gradient stats before clipping
+                    grad_metrics = {}
                     if self.accelerator.sync_gradients:
+                        # Compute gradient norm before clipping
+                        grad_metrics = self.metrics_tracker.update_gradient_stats(
+                            trainable_params,
+                            self.config.max_grad_norm,
+                        )
                         self.accelerator.clip_grad_norm_(
                             trainable_params,
                             self.config.max_grad_norm,
@@ -218,40 +439,137 @@ class VLAFineTuner:
                     scheduler.step()
                     optimizer.zero_grad()
 
-                epoch_loss += loss.item()
+                # Update metrics tracker
+                loss_value = loss.item()
+                self.metrics_tracker.update_loss(loss_value)
+                epoch_loss += loss_value
                 num_batches += 1
                 global_step += 1
+
+                # Compute action metrics if predictions available
+                action_metrics = {}
+                if "predicted_actions" in outputs and "action" in batch:
+                    action_metrics = self.metrics_tracker.update_action_metrics(
+                        outputs["predicted_actions"],
+                        batch["action"],
+                    )
 
                 # Logging
                 if global_step % self.config.logging_steps == 0:
                     avg_loss = epoch_loss / num_batches
+                    smoothed_loss = self.metrics_tracker.get_smoothed_loss()
                     lr = scheduler.get_last_lr()[0]
 
-                    progress_bar.set_postfix({
-                        "loss": f"{loss.item():.4f}",
-                        "lr": f"{lr:.2e}",
-                    })
+                    progress_bar.set_postfix(
+                        {
+                            "loss": f"{loss_value:.4f}",
+                            "smooth": f"{smoothed_loss:.4f}",
+                            "lr": f"{lr:.2e}",
+                            "grad": f"{grad_metrics.get('grad_norm', 0):.2f}",
+                        }
+                    )
 
                     if self.config.use_wandb and self.accelerator.is_main_process:
-                        wandb.log({
-                            "train/loss": loss.item(),
+                        # Core training metrics
+                        log_dict = {
+                            "train/loss": loss_value,
+                            "train/loss_smoothed": smoothed_loss,
+                            "train/loss_avg": avg_loss,
                             "train/lr": lr,
                             "train/epoch": epoch + 1,
                             "train/step": global_step,
-                        })
+                        }
+
+                        # Gradient health metrics
+                        if grad_metrics:
+                            log_dict.update(
+                                {
+                                    "gradient/norm": grad_metrics["grad_norm"],
+                                    "gradient/norm_avg": grad_metrics["grad_norm_avg"],
+                                    "gradient/clip_ratio": grad_metrics[
+                                        "grad_clip_ratio"
+                                    ],
+                                }
+                            )
+
+                        # Action prediction metrics
+                        if action_metrics:
+                            log_dict.update(
+                                {
+                                    "action/mse": action_metrics["action_mse"],
+                                    "action/mae": action_metrics["action_mae"],
+                                    "action/rmse": action_metrics["action_rmse"],
+                                    "action/pred_mean": action_metrics[
+                                        "pred_action_mean"
+                                    ],
+                                    "action/pred_std": action_metrics[
+                                        "pred_action_std"
+                                    ],
+                                    "action/gt_mean": action_metrics["gt_action_mean"],
+                                    "action/gt_std": action_metrics["gt_action_std"],
+                                    "action/mean_diff": action_metrics[
+                                        "action_mean_diff"
+                                    ],
+                                    "action/std_ratio": action_metrics[
+                                        "action_std_ratio"
+                                    ],
+                                }
+                            )
+                            # Per-dimension MSE
+                            for key, value in action_metrics.items():
+                                if key.startswith("action_mse_dim_"):
+                                    dim = key.split("_")[-1]
+                                    log_dict[f"action/mse_dim_{dim}"] = value
+
+                        wandb.log(log_dict)
 
                 # Evaluation
                 if val_loader is not None and global_step % self.config.eval_steps == 0:
-                    val_loss = self._evaluate(val_loader)
+                    val_metrics = self._evaluate(val_loader)
+                    val_loss = val_metrics["loss"]
+
+                    # Check for overfitting
+                    train_loss_current = self.metrics_tracker.get_smoothed_loss()
+                    overfit_metrics = self.metrics_tracker.check_overfitting(
+                        train_loss_current, val_loss
+                    )
 
                     if self.accelerator.is_main_process:
-                        print(f"\nStep {global_step} - Val Loss: {val_loss:.4f}")
+                        print(
+                            f"\nStep {global_step} - Val Loss: {val_loss:.4f} "
+                            f"| Action MSE: {val_metrics.get('action_mse', 0):.4f} "
+                            f"| Gap: {overfit_metrics['train_val_gap']:.4f}"
+                        )
+
+                        if overfit_metrics["is_overfitting"]:
+                            print("  WARNING: Potential overfitting detected!")
 
                         if self.config.use_wandb:
-                            wandb.log({
+                            val_log = {
                                 "val/loss": val_loss,
-                                "val/step": global_step,
-                            })
+                                "val/action_mse": val_metrics.get("action_mse", 0),
+                                "val/action_mae": val_metrics.get("action_mae", 0),
+                                "val/action_rmse": val_metrics.get("action_rmse", 0),
+                                "train/step": global_step,
+                                # Overfitting detection
+                                "overfit/train_val_gap": overfit_metrics[
+                                    "train_val_gap"
+                                ],
+                                "overfit/gap_ratio": overfit_metrics[
+                                    "train_val_gap_ratio"
+                                ],
+                                "overfit/gap_trend": overfit_metrics["gap_trend"],
+                                "overfit/is_overfitting": int(
+                                    overfit_metrics["is_overfitting"]
+                                ),
+                            }
+                            # Per-dimension validation MSE
+                            for key, value in val_metrics.items():
+                                if key.startswith("action_mse_dim_"):
+                                    dim = key.split("_")[-1]
+                                    val_log[f"val/action_mse_dim_{dim}"] = value
+
+                            wandb.log(val_log)
 
                     if val_loss < best_val_loss:
                         best_val_loss = val_loss
@@ -268,17 +586,46 @@ class VLAFineTuner:
             if self.accelerator.is_main_process:
                 print(f"Epoch {epoch + 1} - Average Loss: {avg_epoch_loss:.4f}")
 
+                # Log epoch-level summary
+                if self.config.use_wandb:
+                    epoch_log = {
+                        "epoch/loss": avg_epoch_loss,
+                        "epoch/epoch": epoch + 1,
+                        "train/step": global_step,
+                    }
+
+                    # Add per-dimension summary
+                    dim_summary = self.metrics_tracker.get_per_dim_summary()
+                    for key, value in dim_summary.items():
+                        epoch_log[f"epoch/{key}"] = value
+
+                    # Add action distribution stats
+                    dist_stats = self.metrics_tracker.get_action_distribution_stats()
+                    for key, value in dist_stats.items():
+                        epoch_log[f"epoch/{key}"] = value
+
+                    wandb.log(epoch_log)
+
         # Save final model
         self._save_checkpoint("final")
 
         if self.config.use_wandb and self.accelerator.is_main_process:
             wandb.finish()
 
-    def _evaluate(self, val_loader) -> float:
-        """Evaluate on validation set."""
+    def _evaluate(self, val_loader) -> Dict[str, float]:
+        """
+        Evaluate on validation set with comprehensive metrics.
+
+        Returns:
+            Dict with loss and action metrics.
+        """
         self.model.eval()
         total_loss = 0
         num_batches = 0
+
+        # Accumulators for action metrics
+        all_pred_actions = []
+        all_gt_actions = []
 
         with torch.no_grad():
             for batch in val_loader:
@@ -291,7 +638,43 @@ class VLAFineTuner:
                 total_loss += outputs["loss"].item()
                 num_batches += 1
 
-        return total_loss / num_batches
+                # Collect action predictions
+                if "predicted_actions" in outputs:
+                    all_pred_actions.append(outputs["predicted_actions"].cpu())
+                    all_gt_actions.append(batch["action"].cpu())
+
+        avg_loss = total_loss / num_batches
+        metrics = {"loss": avg_loss}
+
+        # Compute action metrics if available
+        if all_pred_actions:
+            pred_actions = torch.cat(all_pred_actions, dim=0)
+            gt_actions = torch.cat(all_gt_actions, dim=0)
+
+            # Flatten if chunked
+            if pred_actions.dim() == 3:
+                pred_actions = pred_actions.reshape(-1, pred_actions.size(-1))
+                gt_actions = gt_actions.reshape(-1, gt_actions.size(-1))
+
+            # Overall metrics
+            mse = F.mse_loss(pred_actions, gt_actions).item()
+            mae = F.l1_loss(pred_actions, gt_actions).item()
+
+            metrics.update(
+                {
+                    "action_mse": mse,
+                    "action_mae": mae,
+                    "action_rmse": np.sqrt(mse),
+                }
+            )
+
+            # Per-dimension MSE
+            action_dim = pred_actions.size(-1)
+            for d in range(action_dim):
+                dim_mse = F.mse_loss(pred_actions[:, d], gt_actions[:, d]).item()
+                metrics[f"action_mse_dim_{d}"] = dim_mse
+
+        return metrics
 
     def _save_checkpoint(self, name: str):
         """Save checkpoint."""
@@ -307,10 +690,13 @@ class VLAFineTuner:
                 unwrapped_model.llm.save_pretrained(os.path.join(save_path, "lora"))
 
                 # Save other trainable components
-                torch.save({
-                    "vision_projector": unwrapped_model.vision_projector.state_dict(),
-                    "action_head": unwrapped_model.action_head.state_dict(),
-                }, os.path.join(save_path, "components.pt"))
+                torch.save(
+                    {
+                        "vision_projector": unwrapped_model.vision_projector.state_dict(),
+                        "action_head": unwrapped_model.action_head.state_dict(),
+                    },
+                    os.path.join(save_path, "components.pt"),
+                )
             else:
                 # Save full model
                 unwrapped_model.save_pretrained(os.path.join(save_path, "model.pt"))
@@ -318,8 +704,14 @@ class VLAFineTuner:
             # Save config
             with open(os.path.join(save_path, "config.json"), "w") as f:
                 config_dict = vars(self.config)
-                config_dict = {k: str(v) if not isinstance(v, (int, float, bool, str, type(None))) else v
-                               for k, v in config_dict.items()}
+                config_dict = {
+                    k: (
+                        str(v)
+                        if not isinstance(v, (int, float, bool, str, type(None)))
+                        else v
+                    )
+                    for k, v in config_dict.items()
+                }
                 json.dump(config_dict, f, indent=2)
 
             print(f"Saved checkpoint to {save_path}")
@@ -567,7 +959,7 @@ if __name__ == "__main__":
 
     if args.pretrained_vlm:
         print(f"Loading pretrained VLM from {args.pretrained_vlm}")
-        model = VLAModel.from_pretrained(
+        model = VLAModel.from_pretrained_vlm(
             args.pretrained_vlm,
             action_dim=args.action_dim,
             action_chunk_size=args.action_chunk_size,

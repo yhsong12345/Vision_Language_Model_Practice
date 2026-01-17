@@ -8,6 +8,29 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
 
 
+class ConfigValidationError(ValueError):
+    """Raised when configuration validation fails."""
+    pass
+
+
+def _validate_positive(value: int, name: str) -> None:
+    """Validate that a value is positive."""
+    if value <= 0:
+        raise ConfigValidationError(f"{name} must be positive, got {value}")
+
+
+def _validate_non_negative(value: float, name: str) -> None:
+    """Validate that a value is non-negative."""
+    if value < 0:
+        raise ConfigValidationError(f"{name} must be non-negative, got {value}")
+
+
+def _validate_probability(value: float, name: str) -> None:
+    """Validate that a value is a valid probability [0, 1]."""
+    if not 0 <= value <= 1:
+        raise ConfigValidationError(f"{name} must be in [0, 1], got {value}")
+
+
 @dataclass
 class VLAConfig:
     """
@@ -46,6 +69,19 @@ class VLAConfig:
 
     # Optimizations
     use_flash_attention: bool = False
+
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        _validate_positive(self.action_dim, "action_dim")
+        _validate_positive(self.action_chunk_size, "action_chunk_size")
+        _validate_positive(self.hidden_dim, "hidden_dim")
+        _validate_positive(self.num_vision_tokens, "num_vision_tokens")
+        _validate_probability(self.dropout, "dropout")
+
+        if not self.vision_model_name:
+            raise ConfigValidationError("vision_model_name cannot be empty")
+        if not self.llm_model_name:
+            raise ConfigValidationError("llm_model_name cannot be empty")
 
     # Preset configurations
     @classmethod
@@ -137,6 +173,32 @@ class MultiSensorVLAConfig:
     freeze_vision: bool = False
     freeze_llm: bool = False
 
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        _validate_positive(self.action_dim, "action_dim")
+        _validate_positive(self.hidden_dim, "hidden_dim")
+        _validate_positive(self.action_chunk_size, "action_chunk_size")
+
+        if self.use_depth:
+            _validate_positive(self.depth_input_channels, "depth_input_channels")
+            _validate_positive(self.depth_image_size, "depth_image_size")
+            _validate_positive(self.depth_output_dim, "depth_output_dim")
+            _validate_positive(self.depth_num_tokens, "depth_num_tokens")
+
+        if self.use_lidar:
+            _validate_positive(self.lidar_input_dim, "lidar_input_dim")
+            _validate_positive(self.lidar_num_points, "lidar_num_points")
+            _validate_positive(self.lidar_output_dim, "lidar_output_dim")
+
+        if self.use_radar:
+            _validate_positive(self.radar_input_channels, "radar_input_channels")
+            _validate_positive(self.radar_output_dim, "radar_output_dim")
+
+        if self.use_imu:
+            _validate_positive(self.imu_input_dim, "imu_input_dim")
+            _validate_positive(self.imu_seq_len, "imu_seq_len")
+            _validate_positive(self.imu_output_dim, "imu_output_dim")
+
     @classmethod
     def autonomous_driving(cls) -> "MultiSensorVLAConfig":
         """Config for autonomous driving."""
@@ -226,6 +288,26 @@ class OpenVLAConfig:
     # Device mapping
     device_map: str = "auto"
 
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        _validate_positive(self.action_dim, "action_dim")
+
+        if self.use_lora:
+            _validate_positive(self.lora_r, "lora_r")
+            _validate_positive(self.lora_alpha, "lora_alpha")
+            _validate_probability(self.lora_dropout, "lora_dropout")
+            if not self.lora_target_modules:
+                raise ConfigValidationError("lora_target_modules cannot be empty when use_lora=True")
+
+        if self.load_in_8bit and self.load_in_4bit:
+            raise ConfigValidationError("Cannot use both 8-bit and 4-bit quantization")
+
+        valid_quant_types = ["nf4", "fp4"]
+        if self.bnb_4bit_quant_type not in valid_quant_types:
+            raise ConfigValidationError(
+                f"bnb_4bit_quant_type must be one of {valid_quant_types}, got {self.bnb_4bit_quant_type}"
+            )
+
     @classmethod
     def memory_efficient(cls) -> "OpenVLAConfig":
         """Most memory-efficient config (4-bit + LoRA)."""
@@ -271,6 +353,19 @@ class SmolVLAConfig:
 
     # Training
     use_lerobot: bool = True  # Use LeRobot dataloader
+
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        _validate_positive(self.action_dim, "action_dim")
+        _validate_non_negative(self.state_dim, "state_dim")
+
+        if len(self.image_size) != 3:
+            raise ConfigValidationError(
+                f"image_size must have 3 elements [C, H, W], got {len(self.image_size)}"
+            )
+        for i, dim in enumerate(self.image_size):
+            if dim <= 0:
+                raise ConfigValidationError(f"image_size[{i}] must be positive, got {dim}")
 
     @classmethod
     def default(cls) -> "SmolVLAConfig":

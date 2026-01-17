@@ -6,107 +6,174 @@ on:
   pull_request:
     branches: [main, develop]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install linting tools
         run: |
           python -m pip install --upgrade pip
-          pip install ruff black isort
+          pip install ruff mypy
 
-      - name: Run Ruff
-        run: ruff check . --exit-zero
+      - name: Run Ruff linter
+        run: ruff check . --output-format=github
 
-      - name: Check formatting with Black
-        run: black --check . --diff || true
+      - name: Run Ruff formatter check
+        run: ruff format --check .
 
-      - name: Check imports with isort
-        run: isort --check-only . --diff || true
+      - name: Run MyPy type checker
+        run: mypy model/ config/ --ignore-missing-imports --no-error-summary
+        continue-on-error: true
 
   test:
-    name: Test
+    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
-
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.9", "3.10", "3.11"]
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/base.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install pytest pytest-cov numpy
+          pip install -r requirements/base.txt
+          pip install pytest pytest-cov pytest-xdist
 
       - name: Install package
-        run: pip install -e . || true
+        run: pip install -e .
 
-      - name: Run tests
-        run: |
-          pytest tests/ -v --tb=short || true
+      - name: Run unit tests
+        run: pytest tests/unit/ -v --tb=short -x
 
-  smoke-test:
-    name: Smoke Test
+      - name: Run tests with coverage
+        run: pytest tests/ -v --cov=model --cov=config --cov-report=xml --cov-report=term-missing
+        continue-on-error: true
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  test-integration:
+    name: Integration Tests
     runs-on: ubuntu-latest
+    needs: test
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
-      - name: Install minimal dependencies
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-integration-${{ hashFiles('requirements/base.txt') }}
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install numpy
+          pip install -r requirements/base.txt
+          pip install pytest
 
-      - name: Test imports
+      - name: Install package
+        run: pip install -e .
+
+      - name: Run integration tests
+        run: pytest tests/integration/ -v --tb=short -x
+        continue-on-error: true
+
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
         run: |
-          python -c "import torch; print(f'PyTorch {torch.__version__}')"
-          python -c "from model.utils import get_device; print(get_device('cpu'))" || echo "Import check skipped"
+          python -m pip install --upgrade pip
+          pip install build twine
 
-      - name: Run example demo
-        run: |
-          python examples/pusht_demo.py --demo || echo "Demo skipped"
+      - name: Build package
+        run: python -m build
 
-  docs:
-    name: Documentation Check
+      - name: Check package
+        run: twine check dist/*
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  security:
+    name: Security Scan
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Check README exists
-        run: test -f README.md
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-      - name: Check docs folder
+      - name: Install security tools
         run: |
-          test -f docs/usage.md
-          test -f docs/architecture.md
-          test -f docs/training_recipes.md
+          python -m pip install --upgrade pip
+          pip install bandit safety
 
-      - name: Check examples
-        run: |
-          test -f examples/pusht_demo.py
-          test -f examples/mujoco_demo.py
-          test -f examples/carla_demo.py
+      - name: Run Bandit security linter
+        run: bandit -r model/ train/ -ll --skip B101
+        continue-on-error: true
+
+      - name: Check dependencies for vulnerabilities
+        run: safety check --file requirements/base.txt
+        continue-on-error: true

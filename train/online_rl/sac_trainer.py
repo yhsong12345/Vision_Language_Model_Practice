@@ -13,102 +13,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 import numpy as np
 from tqdm import tqdm
 import copy
 
 from .base_trainer import OnlineRLTrainer, ReplayBuffer
-
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from train.utils.rl_networks import GaussianPolicy, TwinQNetwork
 from config.training_config import RLConfig
-
-
-class GaussianPolicy(nn.Module):
-    """Gaussian policy for continuous action spaces."""
-
-    LOG_STD_MIN = -20
-    LOG_STD_MAX = 2
-
-    def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int = 256):
-        super().__init__()
-
-        self.network = nn.Sequential(
-            nn.Linear(obs_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-        )
-
-        self.mean_head = nn.Linear(hidden_dim, action_dim)
-        self.log_std_head = nn.Linear(hidden_dim, action_dim)
-
-    def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        features = self.network(obs)
-        mean = self.mean_head(features)
-        log_std = self.log_std_head(features)
-        log_std = torch.clamp(log_std, self.LOG_STD_MIN, self.LOG_STD_MAX)
-        return mean, log_std
-
-    def sample(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        mean, log_std = self.forward(obs)
-        std = log_std.exp()
-
-        # Reparameterization trick
-        normal = torch.distributions.Normal(mean, std)
-        x = normal.rsample()
-        action = torch.tanh(x)
-
-        # Log prob with tanh squashing correction
-        log_prob = normal.log_prob(x) - torch.log(1 - action.pow(2) + 1e-6)
-        log_prob = log_prob.sum(-1, keepdim=True)
-
-        return action, log_prob
-
-    def get_action(self, obs: torch.Tensor, deterministic: bool = False) -> torch.Tensor:
-        mean, log_std = self.forward(obs)
-
-        if deterministic:
-            return torch.tanh(mean)
-
-        std = log_std.exp()
-        normal = torch.distributions.Normal(mean, std)
-        action = torch.tanh(normal.sample())
-        return action
-
-
-class TwinQNetwork(nn.Module):
-    """Twin Q-networks for SAC."""
-
-    def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int = 256):
-        super().__init__()
-
-        # Q1
-        self.q1 = nn.Sequential(
-            nn.Linear(obs_dim + action_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-        # Q2
-        self.q2 = nn.Sequential(
-            nn.Linear(obs_dim + action_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-    def forward(self, obs: torch.Tensor, action: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        x = torch.cat([obs, action], dim=-1)
-        return self.q1(x), self.q2(x)
-
-    def q1_forward(self, obs: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
-        x = torch.cat([obs, action], dim=-1)
-        return self.q1(x)
 
 
 class SACTrainer(OnlineRLTrainer):

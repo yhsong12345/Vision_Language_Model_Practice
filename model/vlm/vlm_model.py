@@ -26,10 +26,6 @@ from .vision_projector import (
     create_projector,
 )
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 from model.utils import freeze_module, count_parameters, count_trainable_parameters
 
 

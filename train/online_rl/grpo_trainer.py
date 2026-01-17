@@ -18,9 +18,8 @@ import numpy as np
 from tqdm import tqdm
 from dataclasses import dataclass
 
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from config.training_config import RLConfig
+from core.device_utils import get_device
 
 
 class GRPOTrainer:
@@ -58,7 +57,7 @@ class GRPOTrainer:
         self.config = config
 
         # Device
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = get_device("auto")
         self.model = self.model.to(self.device)
 
         # Reference model for KL divergence

@@ -1,8 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=vla_il
-#SBATCH --comment="VLA imitation learning (BC/DAgger/GAIL)"
-#SBATCH --nodelist=cubox01,cubox02,cubox03,cubox04,cubox06,cubox07,cubox10,cubox11
+#SBATCH --comment="Imitation Learning training (BC, DAgger, GAIL)"
+#SBATCH --nodelist=hopper
 #SBATCH --gres=gpu:8
+#SBATCH --nodes=2
 #SBATCH --cpus-per-task=96
 #SBATCH --mem-per-cpu=8G
 
@@ -38,6 +39,28 @@ head_port=29500
 # NCCL network configuration (for Infiniband)
 export NCCL_SOCKET_IFNAME=eno1
 
+# Parse algorithm from arguments (default: bc)
+ALGO="bc"
+EXTRA_ARGS=""
+for arg in "$@"; do
+    case $arg in
+        --algo=*)
+            ALGO="${arg#*=}"
+            shift
+            ;;
+        --algo)
+            shift
+            ALGO="$1"
+            shift
+            ;;
+        *)
+            EXTRA_ARGS="$EXTRA_ARGS $arg"
+            ;;
+    esac
+done
+
+echo "Algorithm: $ALGO"
+echo "Extra args: $EXTRA_ARGS"
 echo "****Starting HEAD at $head_node, $head_node_ip:$head_port"
 
 # Single node, 8 processes
@@ -49,7 +72,7 @@ srun --nodes=1 --ntasks=1 -w "$head_node" \
         --main_process_ip "$head_node_ip" \
         --main_process_port "$head_port" \
         --machine_rank 0 \
-    train/il/behavioral_cloning.py "$@" &
+    train/il/train.py --algo "$ALGO" $EXTRA_ARGS &
 sleep 15
 
 # Start worker from 1 (0 is head node)
@@ -65,7 +88,7 @@ for ((i = 1; i <= worker_num; i++)); do
         --main_process_ip "$head_node_ip" \
         --main_process_port "$head_port" \
         --machine_rank "$i" \
-      train/il/behavioral_cloning.py "$@" &
+      train/il/train.py --algo "$ALGO" $EXTRA_ARGS &
     sleep 5
 done
 
